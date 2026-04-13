@@ -1,0 +1,17 @@
+notes
+main-flow.excalidraw.png
+.env
+**/.env
+/.venv
+venv/
+.venv/
+**/venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+data/
+.vscode/
+.idea/
+.DS_Store
+*.log
