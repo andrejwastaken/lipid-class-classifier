@@ -1,101 +1,138 @@
 # AGENTS.md
 
-## Project Overview
+## Mission
 
-This project is a Lipid Class Classifier based on MS/MS spectra.
+Build a Lipid Class Classifier for MS/MS spectra where users upload .mzML files and receive:
 
-Goal:
+- predicted lipid class
+- probability score
 
-- Users upload .mzML files
-- System returns predicted lipid class + probability
+Main focus is ML classification quality. Web app polish is secondary.
 
-IMPORTANT:
+## Current Stack Snapshot (as of April 2026)
 
-- Main focus is ML classification accuracy
-- Web app is secondary
+- backend: Spring Boot Kotlin project exists but is mostly scaffold.
+- frontend: Vite + React starter template, not domain implementation.
+- ml-service: minimal FastAPI stub and helper utilities; no production training/inference pipeline.
+- infra: docker-compose has PostgreSQL and RabbitMQ.
+- notes define phased plan where Part 1 = ML core and Part 2 = ML inference worker setup.
 
----
+## Data And Existing Helpers
 
-## ML Constraints (STRICT)
+- test data is available in the `data/` directory (including `.mzML` and related `.csv` files).
+- an existing helper for mzML conversion is present in `ml-service/helpers/` and can be reused/adapted for mzML -> CSV/DataFrame workflows.
 
-- Use ONLY the `mz` column from spectra
-- Convert mzML → DataFrame using `pyopenms`
-- Start with simple models:
+## STRICT ML Constraints
+
+- Use ONLY the `mz` values from spectra as model input features.
+- Convert mzML to DataFrame using `pyopenms`.
+- Start with simple baseline models only:
   - Logistic Regression
   - Random Forest
-- CNN/Transformers are optional later
+- CNN/Transformers are explicitly out of scope for now.
+- Preprocessing must be reusable in inference.
+- Save model + preprocessing together as one artifact bundle.
 
-- Preprocessing must be reusable in inference
-- Save model + preprocessing together (pipeline or equivalent)
+## Phase Deliverables
 
----
+Use these deliverables when asked to implement one or more parts/phases. If a user asks for specific phases, implement only those phases. If not specified, ask before implementing large cross-service scope.
 
-## System Architecture
+### Part 0 (Domain and data research)
 
-This is an ASYNCHRONOUS system:
+- review local dataset structure and helper files.
+- review referenced domain resources (for lipid class context and spectra conventions).
+- summarize findings into practical engineering assumptions.
+- produce a clear Codex-ready implementation prompt when requested.
 
-1. User uploads file
-2. Backend creates job (status = PENDING)
-3. Backend sends job to RabbitMQ
-4. Python worker processes job
-5. Worker stores result in PostgreSQL
-6. Frontend polls for result
+### Part 1 (ML core)
 
----
+- training dataset loader from local files.
+- mzML parser using pyopenms that extracts only mz data.
+- deterministic featureization strategy based on mz (for example fixed bins/histogram).
+- reusable sklearn preprocessing + model pipeline.
+- train and compare Logistic Regression and Random Forest.
+- output metrics (at least accuracy and macro F1).
+- persist best pipeline artifact (single file, e.g. joblib).
+- persist label mapping and model metadata/version.
 
-## Service Responsibilities
+### Part 2 (ML inference worker setup)
 
-### ml-service (Python)
+- Python worker process (non-API primary mode).
+- worker loads persisted artifact bundle.
+- worker receives a job payload with `job_id`, `file_path`, `user_id`.
+- worker runs mzML -> features -> predict class + probability.
+- worker returns structured result object for later DB write.
+- keep queue integration pluggable/simple (real RabbitMQ wiring can be minimal stub if not requested, but worker interface must be ready for queue consumption).
+- optional FastAPI endpoints for local smoke testing only.
 
-- mzML parsing (pyopenms)
-- preprocessing
-- model inference
-- worker that consumes RabbitMQ messages
+### Part 3 (Backend + auth + DB foundation)
 
-DO NOT:
+- implement JWT authentication in Spring Boot.
+- configure PostgreSQL integration.
+- implement core entities and persistence for users, jobs, and predictions/results.
+- implement upload endpoint that creates job with status PENDING.
+- persist job metadata and publish queue message for processing.
 
-- implement auth
-- implement REST business logic
+### Part 4 (Message system)
 
----
+- configure RabbitMQ messaging in backend.
+- define queue `ml_jobs` and stable payload contract.
+- implement publisher for job events/messages from backend.
+- add minimal resilience for publish failures (retry/error logging as appropriate).
 
-### backend (Spring Boot Kotlin)
+### Part 5 (Worker execution layer)
 
-- authentication (JWT)
-- file upload handling
-- job creation and tracking
-- communication with RabbitMQ
-- database access
+- consume queue messages from `ml_jobs`.
+- run ML inference for each job payload.
+- write prediction result to DB (or via integration contract when direct DB write is deferred).
+- update job status lifecycle: PROCESSING -> DONE/FAILED.
+- emit useful error details for failed jobs.
 
-DO NOT:
+### Part 6 (Frontend)
 
-- implement ML logic
+- implement file upload flow returning `job_id`.
+- implement auth login UI flow.
+- add polling to retrieve job result by `job_id`.
+- display predicted class, probability, and job status/error.
 
----
+### Part 7 (Dockerization)
 
-### frontend (React)
+- containerize backend, frontend, and ml-service.
+- include infrastructure services (PostgreSQL and RabbitMQ).
+- provide one docker-compose setup for local full-stack run.
+- ensure environment variables are documented and wired.
 
-- upload UI
-- display prediction results
-- authentication UI
+### Part 8 (CI/CD)
 
----
+- build pipeline for backend, frontend, and ml-service.
+- run tests in CI.
+- build and publish container images.
+- keep branch/PR checks practical and fast.
 
-## Data Model (Conceptual)
+### Part 9 (Polish)
 
-Job:
+- complete top-level README with local run and architecture steps.
+- document API and messaging contracts.
+- provide concise troubleshooting notes for common local failures.
 
-- id (UUID)
-- user_id
-- file_path
-- status (PENDING, PROCESSING, DONE, FAILED)
-- result (class, probability)
+### Part 10 (Presentation)
 
----
+- prepare demo flow script (upload -> processing -> result).
+- prepare concise summary of architecture decisions and ML results.
+- include clearly stated contribution/bonus items when requested.
 
-## Messaging (RabbitMQ)
+## System Architecture (target)
 
-Queue: `ml_jobs`
+1. User uploads file.
+2. Backend creates job with status PENDING.
+3. Backend publishes job to RabbitMQ (`ml_jobs`).
+4. Python worker consumes job and performs inference.
+5. Worker writes result/update status in PostgreSQL.
+6. Frontend polls job result.
+
+## Messaging Contract
+
+Queue name: `ml_jobs`
 
 Message format:
 
@@ -107,9 +144,36 @@ Message format:
 }
 ```
 
-## General Rules for Agent
+## Service Boundaries
 
-Do NOT introduce unnecessary complexity
-Prefer simple, working solutions first
-Keep services decoupled
-Follow defined architecture strictly
+### ml-service owns
+
+- mzML parsing
+- feature engineering from mz
+- model training/inference
+- worker loop/consumer logic
+
+### ml-service does NOT own
+
+- authentication
+- backend REST business orchestration
+
+### backend owns
+
+- authentication (JWT)
+- upload handling
+- job lifecycle persistence
+- publishing RabbitMQ jobs
+
+### frontend owns
+
+- upload and results UI
+- auth UI
+
+## Engineering Rules
+
+- Keep solutions simple and working first.
+- Keep modules decoupled and testable.
+- Prefer explicit, reproducible pipelines over clever abstractions.
+- Add small, meaningful tests for preprocessing + inference path.
+- Document how to train and run worker locally.

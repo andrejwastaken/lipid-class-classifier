@@ -1,4 +1,4 @@
-# Lipid Class Classifier - Web Programming Project
+# Lipid Class Classifier - Web Programming and DevOps Project
 
 ## Overview
 
@@ -71,6 +71,22 @@ Run the FastAPI ML service:
 cd ml-service
 uvicorn main:app --reload
 ```
+
+Train the Part 1 m/z-only baseline model from the LipidBlast MSP export:
+
+```bash
+ml-service/venv/bin/python ml-service/helpers/msp_converter.py \
+  --input data/MoNA-export-LipidBlast.msp \
+  --output data/processed/lipidblast_spectra.csv
+
+ml-service/venv/bin/python ml-service/train.py \
+  --input data/processed/lipidblast_spectra.csv \
+  --output ml-service/artifacts/lipid_class_pipeline.joblib \
+  --metadata-output ml-service/artifacts/lipid_class_metadata.json \
+  --bin-width 2.0
+```
+
+The saved `.joblib` bundle contains the fixed m/z histogram preprocessing, the best baseline classifier, the label encoder, and model metadata. The training pipeline uses only spectrum m/z values as model input.
 
 ### Frontend
 

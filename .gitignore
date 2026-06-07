@@ -11,6 +11,9 @@ __pycache__/
 **/__pycache__/
 *.pyc
 data/
+ml-service/artifacts/*.joblib
+ml-service/artifacts/*.pkl
+ml-service/artifacts/*.pickle
 .vscode/
 .idea/
 .DS_Store
