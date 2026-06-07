@@ -104,10 +104,27 @@ Use these deliverables when asked to implement one or more parts/phases. If a us
 
 ### Part 8 (CI/CD)
 
-- build pipeline for backend, frontend, and ml-service.
-- run tests in CI.
-- build and publish container images.
-- keep branch/PR checks practical and fast.
+- This part is for the DevOps project tied to this application. Do not implement it unless explicitly requested.
+- Treat the Lipid Class Classifier as the selected ready application with at least three services, including a database:
+  - frontend
+  - backend
+  - ml-service/worker
+  - PostgreSQL database
+  - RabbitMQ if message orchestration is included
+- Required DevOps deliverables:
+  - public git repository for the application.
+  - Dockerize the application services.
+  - orchestrate the application and database with Docker Compose.
+  - choose one CI platform (GitHub Actions, GitLab CI, Jenkins, etc.).
+  - set up a CI or CI/CD pipeline where a git push builds and publishes the new Docker image version to a registry such as DockerHub.
+  - optional bonus: add CD that deploys to a deployment environment using Docker orchestration, Kubernetes, Argo CD, or similar.
+- Required Kubernetes deliverables:
+  - Deployment for the application with required ConfigMaps/Secrets.
+  - Service for the application.
+  - Ingress for the application.
+  - StatefulSet for the database with required ConfigMaps/Secrets.
+  - place manifests in a separate namespace on the user's cluster and demonstrate that it works.
+- See `notes/devops-ci-cd-requirements.md` for the grading breakdown and implementation assumptions.
 
 ### Part 9 (Polish)
 
