@@ -151,6 +151,9 @@ RABBITMQ_PORT=5672
 RABBITMQ_USER=guest
 RABBITMQ_PASSWORD=guest
 UPLOAD_DIR=uploads
+ML_JOBS_QUEUE=ml_jobs
+ML_JOB_PUBLISH_MAX_ATTEMPTS=3
+ML_JOB_PUBLISH_RETRY_BACKOFF_MS=250
 
 # Used by docker-compose for the Postgres container
 POSTGRES_DB=app_db
@@ -159,6 +162,20 @@ POSTGRES_PASSWORD=password
 ```
 
 Docker Compose reads values from `backend/.env`.
+
+### RabbitMQ Contract
+
+The backend declares a durable queue named `ml_jobs` by default and publishes JSON messages through the RabbitMQ default exchange using the queue name as the routing key. The worker should consume this exact JSON shape:
+
+```json
+{
+  "job_id": "...",
+  "file_path": "...",
+  "user_id": "..."
+}
+```
+
+Publishing is retried with `ML_JOB_PUBLISH_MAX_ATTEMPTS` and `ML_JOB_PUBLISH_RETRY_BACKOFF_MS`; failures are logged and returned as upload errors so failed publish attempts do not silently disappear.
 
 ## Status Flow
 
