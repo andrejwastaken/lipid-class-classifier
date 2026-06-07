@@ -88,6 +88,24 @@ ml-service/venv/bin/python ml-service/train.py \
 
 The saved `.joblib` bundle contains the fixed m/z histogram preprocessing, the best baseline classifier, the label encoder, and model metadata. The training pipeline uses only spectrum m/z values as model input.
 
+Run one local worker inference job from the queue payload contract:
+
+```bash
+ml-service/venv/bin/python ml-service/worker.py \
+  --artifact ml-service/artifacts/lipid_class_pipeline.joblib \
+  --job-json '{"job_id":"local-job-1","file_path":"data/example.mzML","user_id":"local-user-1"}'
+```
+
+The worker loads the saved artifact bundle, extracts m/z values from the `.mzML` file with `pyopenms`, and returns a structured result with `status`, `predicted_class`, `probability`, and model metadata. Queue consumption is intentionally pluggable for Part 2; RabbitMQ wiring is added in the later message-system phases.
+
+Optional FastAPI smoke endpoint:
+
+```bash
+curl -X POST http://localhost:8000/smoke/predict \
+  -H 'Content-Type: application/json' \
+  -d '{"job_id":"local-job-1","file_path":"data/example.mzML","user_id":"local-user-1"}'
+```
+
 ### Frontend
 
 Install dependencies and start the React app:

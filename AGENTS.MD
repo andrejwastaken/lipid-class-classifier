@@ -177,3 +177,26 @@ Message format:
 - Prefer explicit, reproducible pipelines over clever abstractions.
 - Add small, meaningful tests for preprocessing + inference path.
 - Document how to train and run worker locally.
+
+## Git And Artifact Rules
+
+- GitLab `origin` is the primary school repository. Local `main` tracks `origin/main` and should be used for normal school work.
+- Push normal work to GitLab with:
+  - `git checkout main`
+  - `git pull origin main`
+  - `git push origin main`
+- GitHub `github` is a personal repository with separate cleaned history. Do not push local `main` to GitHub because GitLab history contains an old large model artifact commit that GitHub rejects.
+- The local branch `github-main` maps to GitHub `main`. Push GitHub updates with:
+  - `git checkout github-main`
+  - `git push github github-main:main`
+- Commits made on `main` do not automatically appear on `github-main`. To send a GitLab commit to GitHub, port it first, usually with:
+  - `git checkout github-main`
+  - `git cherry-pick <commit-sha-from-main>`
+  - `git push github github-main:main`
+- Do not assume `origin/main` and `github/main` can be cleanly mirrored unless GitLab history is rewritten by a maintainer/admin to remove the old large artifact commit.
+- Generated ML artifacts must stay out of normal Git commits:
+  - `ml-service/artifacts/*.joblib`
+  - `ml-service/artifacts/*.pkl`
+  - `ml-service/artifacts/*.pickle`
+- Keep small metadata files such as `ml-service/artifacts/lipid_class_metadata.json` tracked when useful for reproducibility.
+- If a model artifact must be shared, use Git LFS, a release asset, external storage, or regenerate it from the documented training command instead of committing the binary.
