@@ -60,7 +60,26 @@ Run the Spring Boot backend:
 
 ```bash
 cd backend
-./mvnw spring-boot:run
+mvn spring-boot:run
+```
+
+The backend exposes these Part 3 endpoints:
+
+```bash
+POST /api/auth/register
+POST /api/auth/login
+POST /api/jobs/upload       # multipart field: file, requires Bearer token
+GET  /api/jobs/{job_id}     # requires Bearer token
+```
+
+Uploading an `.mzML` file creates a `PENDING` job row, stores the uploaded file under `UPLOAD_DIR`, and publishes this payload to RabbitMQ queue `ml_jobs`:
+
+```json
+{
+  "job_id": "...",
+  "file_path": "...",
+  "user_id": "..."
+}
 ```
 
 ### ML Service
@@ -128,6 +147,10 @@ DB_USER=user
 DB_PASSWORD=password
 JWT_SECRET=9b3f4a1d8c0e6f2b7a5d1c9e4f8b2a6d0c7e3f1a9b5d2c8e6f4a1b7d3c9e2f5
 RABBITMQ_HOST=localhost
+RABBITMQ_PORT=5672
+RABBITMQ_USER=guest
+RABBITMQ_PASSWORD=guest
+UPLOAD_DIR=uploads
 
 # Used by docker-compose for the Postgres container
 POSTGRES_DB=app_db
