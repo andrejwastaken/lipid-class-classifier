@@ -29,6 +29,9 @@ class PredictionResult(
     @Column(nullable = false)
     var probability: Double = 0.0,
 
+    @Column(name = "model_version", nullable = false)
+    var modelVersion: String = "",
+
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 )
