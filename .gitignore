@@ -10,6 +10,8 @@ venv/
 __pycache__/
 **/__pycache__/
 *.pyc
+target/
+**/target/
 data/
 ml-service/artifacts/*.joblib
 ml-service/artifacts/*.pkl
