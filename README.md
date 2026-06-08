@@ -1,78 +1,71 @@
-# Lipid Class Classifier - Web Programming and DevOps Project
+# Lipid Class Classifier
 
-## Overview
+Distributed web application for classifying lipid classes from MS/MS `.mzML` spectra.
 
-This project is a distributed system for processing and classifying mass spectrometry files (.mzML).  
-It uses a microservice-based architecture with asynchronous processing via RabbitMQ.
+Users register or log in, upload an `.mzML` file, and receive:
 
-The system allows users to upload spectral data, which is processed by an ML service and returned as classification results.
+- predicted lipid class
+- probability score
+- job status and error details when processing fails
 
----
+The main engineering focus is the ML classification pipeline. The web UI is intentionally simple and exists to demonstrate the complete upload -> queue -> worker -> result flow.
+
+## Current Status
+
+The full Docker flow has been verified locally:
+
+- frontend served at `http://localhost:5173`
+- backend API at `http://localhost:8080`
+- PostgreSQL and RabbitMQ healthy
+- ML worker consuming `ml_jobs`
+- upload of a real local `.mzML` file completed with status `DONE`
+- smoke prediction returned lipid class `TAG` with probability `0.03578287012126371`
 
 ## Architecture
 
-- React frontend (TypeScript + Tailwind)
-- Spring Boot backend (Kotlin)
-- FastAPI ML service (Python)
-- PostgreSQL database
-- RabbitMQ message broker
-
-Flow:
-
-User → React → Spring Boot → PostgreSQL → RabbitMQ → ML Service → PostgreSQL → Spring Boot → React
-
----
-
-## Core Features
-
-- User authentication (JWT)
-- File upload (.mzML spectra)
-- Asynchronous ML processing
-- Prediction storage and history
-- Scalable worker-based architecture
-
----
-
-## Tech Stack
-
-- Backend: Spring Boot (Kotlin, Java 21)
-- ML: Python (FastAPI, scikit-learn)
-- Frontend: React (TypeScript, Tailwind CSS)
-- DB: PostgreSQL
-- Messaging: RabbitMQ
-- Deployment: Docker
-
----
-
-## Running locally
-
-### Docker (Infrastructure)
-
-Start PostgreSQL and RabbitMQ:
-
-```bash
-docker-compose up -d
+```text
+User
+  -> React frontend
+  -> Spring Boot backend
+  -> PostgreSQL job row
+  -> RabbitMQ ml_jobs message
+  -> Python ML worker
+  -> PostgreSQL prediction/result row
+  -> Spring Boot polling endpoint
+  -> React result screen
 ```
+
+## Services
+
+### Frontend
+
+Path: `frontend/`
+
+The frontend is a Vite + React app. It owns the browser workflow:
+
+- register/login form
+- JWT storage in browser local storage
+- `.mzML` file selection and upload
+- polling by `job_id`
+- result display with job status, predicted class, probability, model version, and error message
+
+In Docker, the frontend is built as static files and served by Nginx. Nginx also proxies `/api/*` to the backend service, so the browser only needs to talk to `http://localhost:5173`.
 
 ### Backend
 
-Run the Spring Boot backend:
+Path: `backend/`
 
-```bash
-cd backend
-mvn spring-boot:run
-```
+The backend is a Spring Boot Kotlin API. It owns application orchestration:
 
-The backend exposes these Part 3 endpoints:
+- JWT authentication
+- user persistence
+- upload validation for `.mzML`
+- saving uploaded files to a shared upload volume
+- creating `analysis_jobs` rows
+- publishing RabbitMQ messages to `ml_jobs`
+- polling endpoint for job/result status
 
-```bash
-POST /api/auth/register
-POST /api/auth/login
-POST /api/jobs/upload       # multipart field: file, requires Bearer token
-GET  /api/jobs/{job_id}     # requires Bearer token
-```
-
-Uploading an `.mzML` file creates a `PENDING` job row, stores the uploaded file under `UPLOAD_DIR`, and publishes this payload to RabbitMQ queue `ml_jobs`:
+The backend does not perform ML inference. It stores the upload and publishes this queue payload:
 
 ```json
 {
@@ -82,23 +75,223 @@ Uploading an `.mzML` file creates a `PENDING` job row, stores the uploaded file 
 }
 ```
 
-### ML Service
+### ML Service / Worker
 
-Install Python dependencies:
+Path: `ml-service/`
 
-```bash
-cd ml-service
-python -m venv venv
-venv/bin/pip install -r requirements.txt
+The ML service owns spectra parsing, feature engineering, model training, and inference.
+
+Runtime mode is a queue worker:
+
+- loads `ml-service/artifacts/lipid_class_pipeline.joblib`
+- consumes messages from RabbitMQ queue `ml_jobs`
+- marks the job `PROCESSING`
+- parses the uploaded `.mzML` file with `pyopenms`
+- extracts only m/z values
+- runs the saved scikit-learn pipeline
+- writes `prediction_results`
+- marks the job `DONE` or `FAILED`
+
+There is also a small FastAPI smoke endpoint in `ml-service/main.py`, but the primary production-style flow is the worker process, not synchronous HTTP inference.
+
+### PostgreSQL
+
+PostgreSQL stores:
+
+- users
+- analysis jobs
+- prediction results
+
+The database is the source of truth for frontend polling.
+
+### RabbitMQ
+
+RabbitMQ decouples upload from ML inference. The backend publishes jobs to `ml_jobs`, and the Python worker consumes them one at a time.
+
+## ML Pipeline
+
+### Training Data
+
+The current trained metadata was produced from:
+
+```text
+data/processed/lipidblast_spectra.csv
 ```
 
-Train the Part 1 m/z-only baseline model from the LipidBlast MSP export:
+Current artifact metadata:
+
+- rows: `485,796`
+- lipid classes: `56`
+- random state: `42`
+- trained at: `2026-06-07T21:27:45Z`
+- artifact version: `1`
+
+The source file is generated from the LipidBlast MSP export with:
 
 ```bash
 ml-service/venv/bin/python ml-service/helpers/msp_converter.py \
   --input data/MoNA-export-LipidBlast.msp \
   --output data/processed/lipidblast_spectra.csv
+```
 
+### Input Constraint
+
+The ML implementation intentionally uses only m/z values as model input features. Intensities, precursor information, retention time, sample metadata, and filenames are not model features.
+
+For inference, `.mzML` parsing is done with `pyopenms`.
+
+### Feature Engineering
+
+The reusable featureizer is `MzHistogramFeaturizer` in `ml-service/ml_core/features.py`.
+
+Current artifact settings:
+
+- feature type: fixed m/z histogram
+- min m/z: `0.0`
+- max m/z: `2000.0`
+- bin width: `2.0`
+- normalization: enabled
+- input values: m/z only
+
+Each spectrum becomes a fixed-length histogram over the m/z range. This gives Logistic Regression and Random Forest a deterministic vector representation and keeps preprocessing reusable for inference.
+
+### Models
+
+Only baseline models are currently in scope:
+
+- Logistic Regression
+- Random Forest
+
+Training happens in `ml-service/train.py`. The script:
+
+1. loads `lipid_class` and `mz_values`
+2. label-encodes lipid classes
+3. creates a deterministic train/test split
+4. trains both baseline pipelines
+5. evaluates accuracy and macro F1
+6. chooses the best model by macro F1, then accuracy
+7. saves one artifact bundle with preprocessing, model, label encoder, and metadata
+
+Current evaluation:
+
+| Model | Accuracy | Macro F1 |
+| --- | ---: | ---: |
+| Logistic Regression | 0.5504 | 0.3828 |
+| Random Forest | 0.6488 | 0.5724 |
+
+The current best model is `random_forest`.
+
+### Artifact Bundle
+
+The generated artifact is:
+
+```text
+ml-service/artifacts/lipid_class_pipeline.joblib
+```
+
+It is intentionally ignored by Git because it is a generated binary model artifact. Regenerate it from the training command or distribute it through Git LFS, release assets, or external storage.
+
+The small tracked metadata file is:
+
+```text
+ml-service/artifacts/lipid_class_metadata.json
+```
+
+## Run The Full App With Docker
+
+Prerequisites:
+
+- Docker with Compose support
+- trained model artifact at `ml-service/artifacts/lipid_class_pipeline.joblib`
+
+Start the full stack:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
+
+RabbitMQ UI:
+
+```text
+http://localhost:15672
+```
+
+RabbitMQ default login:
+
+```text
+guest / guest
+```
+
+Stop the stack:
+
+```bash
+docker compose down
+```
+
+Reset database, RabbitMQ, and uploaded files:
+
+```bash
+docker compose down -v
+```
+
+## Local Smoke Test
+
+After `docker compose up --build`, use the browser:
+
+1. Open `http://localhost:5173`.
+2. Register a user.
+3. Upload an `.mzML` file from `data/mzML-Diabetes-CKD1-Neg-mzml 1/`.
+4. Wait for status to move from `PENDING` to `PROCESSING` to `DONE`.
+5. Confirm predicted class and probability appear.
+
+API smoke flow:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"smoke@example.com","password":"password123"}' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+
+curl -X POST http://localhost:8080/api/jobs/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@data/mzML-Diabetes-CKD1-Neg-mzml 1/4-10-2025_0375_8_1_887.mzML;filename=smoke.mzML"
+```
+
+Use the returned `job_id`:
+
+```bash
+curl http://localhost:8080/api/jobs/<job_id> \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Train The Model
+
+Create a virtual environment:
+
+```bash
+cd ml-service
+python -m venv venv
+venv/bin/pip install -r requirements.txt
+cd ..
+```
+
+Convert MSP to CSV:
+
+```bash
+ml-service/venv/bin/python ml-service/helpers/msp_converter.py \
+  --input data/MoNA-export-LipidBlast.msp \
+  --output data/processed/lipidblast_spectra.csv
+```
+
+Train and compare baselines:
+
+```bash
 ml-service/venv/bin/python ml-service/train.py \
   --input data/processed/lipidblast_spectra.csv \
   --output ml-service/artifacts/lipid_class_pipeline.joblib \
@@ -106,12 +299,24 @@ ml-service/venv/bin/python ml-service/train.py \
   --bin-width 2.0
 ```
 
-The saved `.joblib` bundle contains the fixed m/z histogram preprocessing, the best baseline classifier, the label encoder, and model metadata. The training pipeline uses only spectrum m/z values as model input.
+## Run Services Without Full Docker
 
-Run the RabbitMQ/PostgreSQL worker for the full application flow:
+Start only infrastructure:
 
 ```bash
-cd ..
+docker compose up -d postgres rabbitmq
+```
+
+Backend:
+
+```bash
+cd backend
+mvn spring-boot:run
+```
+
+ML worker:
+
+```bash
 set -a
 source backend/.env
 set +a
@@ -121,29 +326,7 @@ ml-service/venv/bin/python ml-service/worker.py \
   --artifact ml-service/artifacts/lipid_class_pipeline.joblib
 ```
 
-The worker consumes `ml_jobs`, updates `analysis_jobs.status` to `PROCESSING`, runs m/z-only inference from the uploaded `.mzML`, inserts or updates `prediction_results`, then marks the job `DONE`. If inference fails, it marks the job `FAILED` and stores the error message.
-
-Run one local worker inference job without RabbitMQ/DB:
-
-```bash
-ml-service/venv/bin/python ml-service/worker.py \
-  --artifact ml-service/artifacts/lipid_class_pipeline.joblib \
-  --job-json '{"job_id":"local-job-1","file_path":"data/example.mzML","user_id":"local-user-1"}'
-```
-
-The worker loads the saved artifact bundle, extracts m/z values from the `.mzML` file with `pyopenms`, and returns a structured result with `status`, `predicted_class`, `probability`, and model metadata.
-
-Optional FastAPI smoke endpoint:
-
-```bash
-curl -X POST http://localhost:8000/smoke/predict \
-  -H 'Content-Type: application/json' \
-  -d '{"job_id":"local-job-1","file_path":"data/example.mzML","user_id":"local-user-1"}'
-```
-
-### Frontend
-
-Install dependencies and start the React app:
+Frontend:
 
 ```bash
 cd frontend
@@ -151,23 +334,105 @@ npm install
 npm run dev
 ```
 
-The frontend runs on Vite, usually at `http://localhost:5173`. In development it proxies `/api/*` to the Spring Boot backend at `http://localhost:8080`, so no extra browser CORS setup is needed for local testing.
+## API Contract
 
-The browser flow:
+### Auth
 
-1. Register or log in through `POST /api/auth/register` or `POST /api/auth/login`.
-2. Upload an `.mzML` file through `POST /api/jobs/upload` using the JWT bearer token.
-3. Store the returned `job_id`.
-4. Poll `GET /api/jobs/{job_id}` every three seconds.
-5. Display job status, predicted class, probability, model version, or failure details.
+```text
+POST /api/auth/register
+POST /api/auth/login
+```
 
-End-to-end status: with Docker infrastructure, backend, frontend, and `worker.py --consume` running, the app authenticates users, uploads `.mzML` files, queues jobs through RabbitMQ, runs ML inference in the Python worker, persists predictions in PostgreSQL, and shows the final prediction screen after polling returns `DONE`.
+Request:
+
+```json
+{
+  "email": "student@example.com",
+  "password": "password123"
+}
+```
+
+Response:
+
+```json
+{
+  "token": "...",
+  "user": {
+    "id": "...",
+    "email": "student@example.com"
+  }
+}
+```
+
+### Upload
+
+```text
+POST /api/jobs/upload
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+field: file
+```
+
+Response:
+
+```json
+{
+  "job_id": "...",
+  "status": "PENDING"
+}
+```
+
+### Poll Result
+
+```text
+GET /api/jobs/{job_id}
+Authorization: Bearer <token>
+```
+
+Response:
+
+```json
+{
+  "job_id": "...",
+  "status": "DONE",
+  "original_filename": "sample.mzML",
+  "predicted_class": "TAG",
+  "probability": 0.03578287012126371,
+  "model_version": "1",
+  "error_message": null,
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+## Messaging Contract
+
+Queue:
+
+```text
+ml_jobs
+```
+
+Message:
+
+```json
+{
+  "job_id": "...",
+  "file_path": "...",
+  "user_id": "..."
+}
+```
+
+Status lifecycle:
+
+- `PENDING`: backend created the job and published queue message
+- `PROCESSING`: worker started inference
+- `DONE`: worker wrote prediction result
+- `FAILED`: backend or worker stored an error
 
 ## Environment Variables
 
-### Backend
-
-Create `backend/.env` with:
+Docker Compose wires local defaults directly. For manual local runs, create `backend/.env`:
 
 ```env
 DB_URL=jdbc:postgresql://localhost:5432/app_db
@@ -182,36 +447,173 @@ UPLOAD_DIR=uploads
 ML_JOBS_QUEUE=ml_jobs
 ML_JOB_PUBLISH_MAX_ATTEMPTS=3
 ML_JOB_PUBLISH_RETRY_BACKOFF_MS=250
-
-# Used by docker-compose for the Postgres container
 POSTGRES_DB=app_db
 POSTGRES_USER=user
 POSTGRES_PASSWORD=password
 ```
 
-Docker Compose reads values from `backend/.env`.
+## DevOps Part 8 Scope
 
-### RabbitMQ Contract
+Part 8 is split into non-Kubernetes and Kubernetes work.
 
-The backend declares a durable queue named `ml_jobs` by default and publishes JSON messages through the RabbitMQ default exchange using the queue name as the routing key. The worker should consume this exact JSON shape:
+### Implemented Now: Non-Kubernetes
 
-```json
-{
-  "job_id": "...",
-  "file_path": "...",
-  "user_id": "..."
-}
+- application is Dockerized:
+  - `frontend/Dockerfile`
+  - `backend/Dockerfile`
+  - `ml-service/Dockerfile`
+- Docker Compose orchestrates:
+  - frontend
+  - backend
+  - ML worker
+  - PostgreSQL
+  - RabbitMQ
+- GitHub Actions CI/CD workflow added:
+  - `.github/workflows/docker-publish.yml`
+  - builds frontend, backend, and ML worker images
+  - publishes images to DockerHub on push to GitHub `main`
+  - builds images without publishing on pull requests
+
+Required GitHub repository secrets:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
 ```
 
-Publishing is retried with `ML_JOB_PUBLISH_MAX_ATTEMPTS` and `ML_JOB_PUBLISH_RETRY_BACKOFF_MS`; failures are logged and returned as upload errors so failed publish attempts do not silently disappear.
+Published image names:
 
-## Status Flow
+```text
+<DOCKERHUB_USERNAME>/lipid-classifier-frontend:latest
+<DOCKERHUB_USERNAME>/lipid-classifier-backend:latest
+<DOCKERHUB_USERNAME>/lipid-classifier-ml-worker:latest
+```
 
-- `PENDING`: job created
-- `PROCESSING`: ML worker running
-- `DONE`: prediction stored
-- `FAILED`: error occurred
+Each push also publishes a commit-SHA tag.
 
-## Notes
+### Deferred: Kubernetes
 
-This system is designed as an asynchronous, event-driven architecture using a single job queue and the database as the source of truth.
+Kubernetes is intentionally not implemented yet. Future work should add:
+
+- namespace
+- ConfigMaps and Secrets
+- frontend/backend/worker Deployments
+- Services
+- Ingress
+- PostgreSQL StatefulSet
+- RabbitMQ deployment or managed queue option
+- cluster deployment proof
+
+## Troubleshooting
+
+### Worker Fails Because Artifact Is Missing
+
+Symptom:
+
+```text
+FileNotFoundError: lipid_class_pipeline.joblib
+```
+
+Fix: train the model or place the artifact at:
+
+```text
+ml-service/artifacts/lipid_class_pipeline.joblib
+```
+
+### Worker Fails Loading pyopenms Native Libraries
+
+The Docker image includes the required runtime libraries. If running locally outside Docker, install dependencies in a Python version supported by `pyopenms` and prefer the documented virtual environment.
+
+### Upload Stays PENDING
+
+Check the worker and RabbitMQ:
+
+```bash
+docker compose logs -f ml-worker
+docker compose logs -f rabbitmq
+```
+
+The worker should print:
+
+```text
+Consuming RabbitMQ queue ml_jobs at rabbitmq:5672
+```
+
+### Backend Cannot Connect To Database
+
+Check:
+
+```bash
+docker compose ps
+docker compose logs postgres
+docker compose logs backend
+```
+
+In Docker, the backend uses:
+
+```text
+jdbc:postgresql://postgres:5432/app_db
+```
+
+For manual host runs, use:
+
+```text
+jdbc:postgresql://localhost:5432/app_db
+```
+
+### Frontend Cannot Reach API
+
+In Docker, open the app through:
+
+```text
+http://localhost:5173
+```
+
+Nginx proxies `/api/*` to the backend. In Vite development, `vite.config.ts` proxies `/api` to `http://localhost:8080`.
+
+### DockerHub Publish Fails In CI
+
+Confirm GitHub secrets exist:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+```
+
+Also confirm the DockerHub token has write permission.
+
+## Presentation Summary
+
+Demo flow:
+
+1. Start stack with `docker compose up --build`.
+2. Open `http://localhost:5173`.
+3. Register or log in.
+4. Upload a sample `.mzML`.
+5. Show backend creates a `PENDING` job.
+6. Show RabbitMQ queue handoff.
+7. Show worker logs consuming `ml_jobs`.
+8. Show final `DONE` result with predicted lipid class and probability.
+
+Architecture talking points:
+
+- backend owns auth, uploads, job lifecycle, and queue publishing
+- ML worker owns parsing, feature extraction, inference, and result writing
+- RabbitMQ decouples upload latency from ML runtime
+- PostgreSQL is the source of truth for polling
+- Docker Compose runs the whole app locally
+- GitHub Actions builds and publishes service images for the non-Kubernetes DevOps requirement
+
+ML talking points:
+
+- strict m/z-only model input
+- `.mzML` inference parsing through `pyopenms`
+- deterministic fixed m/z histogram preprocessing
+- preprocessing and model saved together in one joblib bundle
+- baseline comparison only: Logistic Regression vs Random Forest
+- Random Forest is current best model with `0.6488` accuracy and `0.5724` macro F1
+- future ML work should improve data quality, add stronger validation splits, tune baselines, and only then consider more complex models
+
+Deferred Kubernetes talking point:
+
+- Kubernetes manifests are intentionally future work so the current submission can clearly demonstrate Docker, Compose, and CI/CD first.

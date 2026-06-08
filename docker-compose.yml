@@ -1,10 +1,12 @@
 services:
   postgres:
     image: postgres:17
-    container_name: postgres
+    container_name: lipid-postgres
     restart: unless-stopped
-    env_file:
-      - ./backend/.env
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
     ports:
       - "5432:5432"
     volumes:
@@ -17,7 +19,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
+    container_name: lipid-rabbitmq
     restart: unless-stopped
     ports:
       - "5672:5672"
@@ -30,6 +32,76 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: ./backend
+    container_name: lipid-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/app_db
+      DB_USER: user
+      DB_PASSWORD: password
+      JWT_SECRET: ${JWT_SECRET:-9b3f4a1d8c0e6f2b7a5d1c9e4f8b2a6d0c7e3f1a9b5d2c8e6f4a1b7d3c9e2f5}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      UPLOAD_DIR: /app/uploads
+      ML_JOBS_QUEUE: ml_jobs
+      ML_JOB_PUBLISH_MAX_ATTEMPTS: 3
+      ML_JOB_PUBLISH_RETRY_BACKOFF_MS: 250
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads_data:/app/uploads
+
+  ml-worker:
+    build:
+      context: ./ml-service
+    container_name: lipid-ml-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/app_db
+      DB_USER: user
+      DB_PASSWORD: password
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: app_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      ML_JOBS_QUEUE: ml_jobs
+    volumes:
+      - uploads_data:/app/uploads
+      - ./ml-service/artifacts:/app/artifacts:ro
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: lipid-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "5173:80"
+
 volumes:
   postgres_data:
   rabbitmq_data:
+  uploads_data:
