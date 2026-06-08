@@ -452,58 +452,6 @@ POSTGRES_USER=user
 POSTGRES_PASSWORD=password
 ```
 
-## DevOps Part 8 Scope
-
-Part 8 is split into non-Kubernetes and Kubernetes work.
-
-### Implemented Now: Non-Kubernetes
-
-- application is Dockerized:
-  - `frontend/Dockerfile`
-  - `backend/Dockerfile`
-  - `ml-service/Dockerfile`
-- Docker Compose orchestrates:
-  - frontend
-  - backend
-  - ML worker
-  - PostgreSQL
-  - RabbitMQ
-- GitHub Actions CI/CD workflow added:
-  - `.github/workflows/docker-publish.yml`
-  - builds frontend, backend, and ML worker images
-  - publishes images to DockerHub on push to GitHub `main`
-  - builds images without publishing on pull requests
-
-Required GitHub repository secrets:
-
-```text
-DOCKERHUB_USERNAME
-DOCKERHUB_TOKEN
-```
-
-Published image names:
-
-```text
-<DOCKERHUB_USERNAME>/lipid-classifier-frontend:latest
-<DOCKERHUB_USERNAME>/lipid-classifier-backend:latest
-<DOCKERHUB_USERNAME>/lipid-classifier-ml-worker:latest
-```
-
-Each push also publishes a commit-SHA tag.
-
-### Deferred: Kubernetes
-
-Kubernetes is intentionally not implemented yet. Future work should add:
-
-- namespace
-- ConfigMaps and Secrets
-- frontend/backend/worker Deployments
-- Services
-- Ingress
-- PostgreSQL StatefulSet
-- RabbitMQ deployment or managed queue option
-- cluster deployment proof
-
 ## Troubleshooting
 
 ### Worker Fails Because Artifact Is Missing
@@ -581,39 +529,3 @@ DOCKERHUB_TOKEN
 ```
 
 Also confirm the DockerHub token has write permission.
-
-## Presentation Summary
-
-Demo flow:
-
-1. Start stack with `docker compose up --build`.
-2. Open `http://localhost:5173`.
-3. Register or log in.
-4. Upload a sample `.mzML`.
-5. Show backend creates a `PENDING` job.
-6. Show RabbitMQ queue handoff.
-7. Show worker logs consuming `ml_jobs`.
-8. Show final `DONE` result with predicted lipid class and probability.
-
-Architecture talking points:
-
-- backend owns auth, uploads, job lifecycle, and queue publishing
-- ML worker owns parsing, feature extraction, inference, and result writing
-- RabbitMQ decouples upload latency from ML runtime
-- PostgreSQL is the source of truth for polling
-- Docker Compose runs the whole app locally
-- GitHub Actions builds and publishes service images for the non-Kubernetes DevOps requirement
-
-ML talking points:
-
-- strict m/z-only model input
-- `.mzML` inference parsing through `pyopenms`
-- deterministic fixed m/z histogram preprocessing
-- preprocessing and model saved together in one joblib bundle
-- baseline comparison only: Logistic Regression vs Random Forest
-- Random Forest is current best model with `0.6488` accuracy and `0.5724` macro F1
-- future ML work should improve data quality, add stronger validation splits, tune baselines, and only then consider more complex models
-
-Deferred Kubernetes talking point:
-
-- Kubernetes manifests are intentionally future work so the current submission can clearly demonstrate Docker, Compose, and CI/CD first.
