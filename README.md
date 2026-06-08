@@ -582,6 +582,8 @@ DOCKERHUB_TOKEN
 
 Also confirm the DockerHub token has write permission.
 
+If these secrets are missing, the workflow still builds images on `push` but skips DockerHub login and publish steps.
+
 ## Presentation Summary
 
 Demo flow:
