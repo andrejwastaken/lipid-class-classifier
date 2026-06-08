@@ -84,11 +84,12 @@ Uploading an `.mzML` file creates a `PENDING` job row, stores the uploaded file 
 
 ### ML Service
 
-Run the FastAPI ML service:
+Install Python dependencies:
 
 ```bash
 cd ml-service
-uvicorn main:app --reload
+python -m venv venv
+venv/bin/pip install -r requirements.txt
 ```
 
 Train the Part 1 m/z-only baseline model from the LipidBlast MSP export:
@@ -107,7 +108,22 @@ ml-service/venv/bin/python ml-service/train.py \
 
 The saved `.joblib` bundle contains the fixed m/z histogram preprocessing, the best baseline classifier, the label encoder, and model metadata. The training pipeline uses only spectrum m/z values as model input.
 
-Run one local worker inference job from the queue payload contract:
+Run the RabbitMQ/PostgreSQL worker for the full application flow:
+
+```bash
+cd ..
+set -a
+source backend/.env
+set +a
+
+ml-service/venv/bin/python ml-service/worker.py \
+  --consume \
+  --artifact ml-service/artifacts/lipid_class_pipeline.joblib
+```
+
+The worker consumes `ml_jobs`, updates `analysis_jobs.status` to `PROCESSING`, runs m/z-only inference from the uploaded `.mzML`, inserts or updates `prediction_results`, then marks the job `DONE`. If inference fails, it marks the job `FAILED` and stores the error message.
+
+Run one local worker inference job without RabbitMQ/DB:
 
 ```bash
 ml-service/venv/bin/python ml-service/worker.py \
@@ -115,7 +131,7 @@ ml-service/venv/bin/python ml-service/worker.py \
   --job-json '{"job_id":"local-job-1","file_path":"data/example.mzML","user_id":"local-user-1"}'
 ```
 
-The worker loads the saved artifact bundle, extracts m/z values from the `.mzML` file with `pyopenms`, and returns a structured result with `status`, `predicted_class`, `probability`, and model metadata. Queue consumption is intentionally pluggable for Part 2; RabbitMQ wiring is added in the later message-system phases.
+The worker loads the saved artifact bundle, extracts m/z values from the `.mzML` file with `pyopenms`, and returns a structured result with `status`, `predicted_class`, `probability`, and model metadata.
 
 Optional FastAPI smoke endpoint:
 
@@ -132,8 +148,20 @@ Install dependencies and start the React app:
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
+
+The frontend runs on Vite, usually at `http://localhost:5173`. In development it proxies `/api/*` to the Spring Boot backend at `http://localhost:8080`, so no extra browser CORS setup is needed for local testing.
+
+The browser flow:
+
+1. Register or log in through `POST /api/auth/register` or `POST /api/auth/login`.
+2. Upload an `.mzML` file through `POST /api/jobs/upload` using the JWT bearer token.
+3. Store the returned `job_id`.
+4. Poll `GET /api/jobs/{job_id}` every three seconds.
+5. Display job status, predicted class, probability, model version, or failure details.
+
+End-to-end status: with Docker infrastructure, backend, frontend, and `worker.py --consume` running, the app authenticates users, uploads `.mzML` files, queues jobs through RabbitMQ, runs ML inference in the Python worker, persists predictions in PostgreSQL, and shows the final prediction screen after polling returns `DONE`.
 
 ## Environment Variables
 

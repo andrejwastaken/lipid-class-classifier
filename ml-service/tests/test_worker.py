@@ -6,7 +6,33 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import worker as worker_module
-from worker import JobPayload, LipidClassifierWorker, run_worker_loop
+from worker import JobPayload, LipidClassifierWorker, mark_job_processing, run_worker_loop, write_prediction_result
+
+
+class FakeCursor:
+    def __init__(self, connection) -> None:
+        self.connection = connection
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        return None
+
+    def execute(self, sql, params) -> None:
+        self.connection.executed.append((" ".join(sql.split()), params))
+
+
+class FakeConnection:
+    def __init__(self) -> None:
+        self.executed = []
+        self.commits = 0
+
+    def cursor(self) -> FakeCursor:
+        return FakeCursor(self)
+
+    def commit(self) -> None:
+        self.commits += 1
 
 
 def test_job_payload_requires_stable_queue_contract() -> None:
@@ -110,3 +136,51 @@ def test_run_worker_loop_keeps_queue_integration_pluggable(monkeypatch: pytest.M
 
     assert captured_results[0]["status"] == "DONE"
     assert captured_results[0]["predicted_class"] == "TG"
+
+
+def test_write_prediction_result_persists_done_lifecycle() -> None:
+    connection = FakeConnection()
+
+    write_prediction_result(
+        connection,
+        {
+            "job_id": "78bbf90b-9081-4f65-8a8e-d7d12e02bf01",
+            "status": "DONE",
+            "predicted_class": "PC",
+            "probability": 0.91,
+            "model": {"artifact_version": 3, "best_model": "random_forest"},
+        },
+    )
+
+    assert connection.commits == 1
+    assert len(connection.executed) == 3
+    assert connection.executed[0][1] == ("PROCESSING", "78bbf90b-9081-4f65-8a8e-d7d12e02bf01")
+    assert connection.executed[1][1][2:] == ("PC", 0.91, "3")
+    assert connection.executed[2][1] == ("DONE", "78bbf90b-9081-4f65-8a8e-d7d12e02bf01")
+
+
+def test_write_prediction_result_persists_failed_lifecycle() -> None:
+    connection = FakeConnection()
+
+    write_prediction_result(
+        connection,
+        {
+            "job_id": "78bbf90b-9081-4f65-8a8e-d7d12e02bf01",
+            "status": "FAILED",
+            "error": {"message": "bad mzML"},
+        },
+    )
+
+    assert connection.commits == 1
+    assert len(connection.executed) == 1
+    assert connection.executed[0][1] == ("FAILED", "bad mzML", "78bbf90b-9081-4f65-8a8e-d7d12e02bf01")
+
+
+def test_mark_job_processing_persists_processing_status() -> None:
+    connection = FakeConnection()
+
+    mark_job_processing(connection, {"job_id": "78bbf90b-9081-4f65-8a8e-d7d12e02bf01"})
+
+    assert connection.commits == 1
+    assert len(connection.executed) == 1
+    assert connection.executed[0][1] == ("PROCESSING", "78bbf90b-9081-4f65-8a8e-d7d12e02bf01")

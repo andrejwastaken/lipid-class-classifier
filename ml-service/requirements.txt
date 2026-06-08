@@ -6,3 +6,5 @@ pyopenms
 joblib
 numpy
 scipy
+pika
+psycopg[binary]

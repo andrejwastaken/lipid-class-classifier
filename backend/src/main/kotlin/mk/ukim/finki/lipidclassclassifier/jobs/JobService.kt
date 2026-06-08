@@ -29,7 +29,6 @@ class JobService(
 ) {
     private val uploadRoot: Path = Paths.get(uploadDir).toAbsolutePath().normalize()
 
-    @Transactional
     fun createUploadJob(userId: UUID, file: MultipartFile): UploadResponse {
         if (file.isEmpty) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Uploaded file is empty")
@@ -61,13 +60,20 @@ class JobService(
         )
         val jobId = requireNotNull(job.id)
 
-        mlJobPublisher.publish(
-            MlJobMessage(
-                job_id = jobId.toString(),
-                file_path = job.storedFilePath,
-                user_id = userId.toString(),
-            ),
-        )
+        try {
+            mlJobPublisher.publish(
+                MlJobMessage(
+                    job_id = jobId.toString(),
+                    file_path = job.storedFilePath,
+                    user_id = userId.toString(),
+                ),
+            )
+        } catch (ex: RuntimeException) {
+            job.status = JobStatus.FAILED
+            job.errorMessage = "Failed to publish ML processing job"
+            jobRepository.save(job)
+            throw ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Failed to queue ML processing job", ex)
+        }
 
         return UploadResponse(job_id = jobId, status = job.status)
     }
