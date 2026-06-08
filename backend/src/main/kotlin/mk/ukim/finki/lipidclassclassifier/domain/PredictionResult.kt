@@ -32,6 +32,12 @@ class PredictionResult(
     @Column(name = "model_version", nullable = false)
     var modelVersion: String = "",
 
+    @Column(name = "top_predicted_classes")
+    var topPredictedClasses: String? = null,
+
+    @Column(name = "top_probabilities")
+    var topProbabilities: String? = null,
+
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 )

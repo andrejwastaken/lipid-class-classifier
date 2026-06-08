@@ -73,6 +73,10 @@ def test_worker_returns_structured_prediction(monkeypatch: pytest.MonkeyPatch, t
         lambda bundle, path, ms_level=None: {
             "predicted_class": "PC",
             "probability": 0.87,
+            "top_predictions": [
+                {"class_name": "PC", "probability": 0.87},
+                {"class_name": "PE", "probability": 0.08},
+            ],
         },
     )
 
@@ -91,6 +95,10 @@ def test_worker_returns_structured_prediction(monkeypatch: pytest.MonkeyPatch, t
         "status": "DONE",
         "predicted_class": "PC",
         "probability": 0.87,
+        "top_predictions": [
+            {"class_name": "PC", "probability": 0.87},
+            {"class_name": "PE", "probability": 0.08},
+        ],
         "model": {
             "artifact_path": str(artifact_path),
             "artifact_version": 1,
@@ -111,6 +119,7 @@ def test_worker_returns_failed_result_for_invalid_payload(monkeypatch: pytest.Mo
     assert result["status"] == "FAILED"
     assert result["predicted_class"] is None
     assert result["probability"] is None
+    assert result["top_predictions"] == []
     assert result["error"]["type"] == "ValueError"
     assert "file_path" in result["error"]["message"]
 
@@ -123,6 +132,7 @@ def test_run_worker_loop_keeps_queue_integration_pluggable(monkeypatch: pytest.M
         lambda bundle, path, ms_level=None: {
             "predicted_class": "TG",
             "probability": 0.66,
+            "top_predictions": [{"class_name": "TG", "probability": 0.66}],
         },
     )
 
@@ -148,6 +158,10 @@ def test_write_prediction_result_persists_done_lifecycle() -> None:
             "status": "DONE",
             "predicted_class": "PC",
             "probability": 0.91,
+            "top_predictions": [
+                {"class_name": "PC", "probability": 0.91},
+                {"class_name": "PE", "probability": 0.04},
+            ],
             "model": {"artifact_version": 3, "best_model": "random_forest"},
         },
     )
@@ -155,7 +169,7 @@ def test_write_prediction_result_persists_done_lifecycle() -> None:
     assert connection.commits == 1
     assert len(connection.executed) == 3
     assert connection.executed[0][1] == ("PROCESSING", "78bbf90b-9081-4f65-8a8e-d7d12e02bf01")
-    assert connection.executed[1][1][2:] == ("PC", 0.91, "3")
+    assert connection.executed[1][1][2:] == ("PC", 0.91, "3", "PC,PE", "0.91,0.04")
     assert connection.executed[2][1] == ("DONE", "78bbf90b-9081-4f65-8a8e-d7d12e02bf01")
 
 

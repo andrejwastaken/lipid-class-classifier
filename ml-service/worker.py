@@ -58,6 +58,15 @@ class LipidClassifierWorker:
                 "status": "DONE",
                 "predicted_class": prediction["predicted_class"],
                 "probability": prediction["probability"],
+                "top_predictions": prediction.get(
+                    "top_predictions",
+                    [
+                        {
+                            "class_name": prediction["predicted_class"],
+                            "probability": prediction["probability"],
+                        }
+                    ],
+                ),
                 "model": {
                     "artifact_path": str(self.artifact_path),
                     "artifact_version": metadata.get("artifact_version"),
@@ -74,6 +83,7 @@ class LipidClassifierWorker:
                 "status": "FAILED",
                 "predicted_class": None,
                 "probability": None,
+                "top_predictions": [],
                 "model": {
                     "artifact_path": str(self.artifact_path),
                     "artifact_version": self.bundle.get("metadata", {}).get("artifact_version"),
@@ -205,6 +215,14 @@ def write_prediction_result(connection: Any, result: Dict[str, Any]) -> None:
             or model.get("artifact_path")
             or "unknown"
         )
+        top_predictions = result.get("top_predictions") or [
+            {
+                "class_name": result["predicted_class"],
+                "probability": result["probability"],
+            }
+        ]
+        top_predicted_classes = ",".join(str(item["class_name"]) for item in top_predictions[:5])
+        top_probabilities = ",".join(str(float(item["probability"])) for item in top_predictions[:5])
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -217,13 +235,18 @@ def write_prediction_result(connection: Any, result: Dict[str, Any]) -> None:
             cursor.execute(
                 """
                 INSERT INTO prediction_results
-                    (id, job_id, predicted_class, probability, model_version, created_at)
+                    (
+                        id, job_id, predicted_class, probability, model_version,
+                        top_predicted_classes, top_probabilities, created_at
+                    )
                 VALUES
-                    (%s, %s, %s, %s, %s, now())
+                    (%s, %s, %s, %s, %s, %s, %s, now())
                 ON CONFLICT (job_id) DO UPDATE
                 SET predicted_class = EXCLUDED.predicted_class,
                     probability = EXCLUDED.probability,
                     model_version = EXCLUDED.model_version,
+                    top_predicted_classes = EXCLUDED.top_predicted_classes,
+                    top_probabilities = EXCLUDED.top_probabilities,
                     created_at = now()
                 """,
                 (
@@ -232,6 +255,8 @@ def write_prediction_result(connection: Any, result: Dict[str, Any]) -> None:
                     result["predicted_class"],
                     result["probability"],
                     model_version,
+                    top_predicted_classes,
+                    top_probabilities,
                 ),
             )
             cursor.execute(

@@ -54,3 +54,5 @@ def test_training_pipeline_bundle_predicts_from_saved_preprocessing(tmp_path: Pa
 
     assert prediction["predicted_class"] == "A"
     assert 0.0 <= prediction["probability"] <= 1.0
+    assert prediction["top_predictions"][0]["class_name"] == prediction["predicted_class"]
+    assert len(prediction["top_predictions"]) == 2

@@ -27,10 +27,17 @@ type JobResponse = {
   original_filename: string
   predicted_class: string | null
   probability: number | null
+  confidence_label: string | null
+  top_predictions: TopPrediction[]
   model_version: string | null
   error_message: string | null
   created_at: string
   updated_at: string
+}
+
+type TopPrediction = {
+  class_name: string
+  probability: number
 }
 
 type Notice = {
@@ -169,6 +176,8 @@ function App() {
         original_filename: selectedFile.name,
         predicted_class: null,
         probability: null,
+        confidence_label: null,
+        top_predictions: [],
         model_version: null,
         error_message: null,
         created_at: new Date().toISOString(),
@@ -488,6 +497,7 @@ function StatusPanel({
         <InfoRow label="File" value={job?.original_filename ?? 'Awaiting upload'} />
         <InfoRow label="Prediction" value={job?.predicted_class ?? 'Pending'} />
         <InfoRow label="Probability" value={probabilityLabel} />
+        <InfoRow label="Confidence" value={job?.confidence_label ?? 'Awaiting prediction'} />
       </div>
     </aside>
   )
@@ -525,9 +535,12 @@ function ResultScreen({
         <div className="grid gap-4 md:grid-cols-3">
           <ResultCard label="Predicted class" value={job.predicted_class ?? 'Unknown'} />
           <ResultCard label="Probability" value={probabilityLabel} />
+          <ResultCard label="Confidence" value={job.confidence_label ?? 'Unknown'} />
           <ResultCard label="Model version" value={job.model_version ?? 'Unknown'} />
         </div>
       )}
+
+      {!failed && job.top_predictions.length > 0 ? <TopPredictions predictions={job.top_predictions} /> : null}
 
       <div className="mt-6 grid gap-3 rounded-lg bg-slate-50 p-4 text-sm md:grid-cols-2">
         <InfoRow label="Job ID" value={job.job_id} />
@@ -542,6 +555,28 @@ function ResultScreen({
         Upload another file
       </button>
     </section>
+  )
+}
+
+function TopPredictions({ predictions }: { predictions: TopPrediction[] }) {
+  return (
+    <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <p className="text-sm font-bold uppercase text-teal-700">Top classes</p>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {predictions.slice(0, 5).map((prediction, index) => (
+          <div
+            className="grid grid-cols-[44px_1fr_auto] items-center gap-3 px-4 py-3 text-sm"
+            key={`${prediction.class_name}-${index}`}
+          >
+            <span className="font-bold text-slate-500">#{index + 1}</span>
+            <span className="font-semibold text-slate-950">{prediction.class_name}</span>
+            <span className="font-bold text-slate-700">{formatProbability(prediction.probability)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -647,6 +682,10 @@ function formatBytes(bytes: number): string {
   const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
   const value = bytes / 1024 ** unitIndex
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function formatProbability(probability: number): string {
+  return `${(probability * 100).toFixed(2)}%`
 }
 
 export default App
