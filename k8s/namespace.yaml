@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-class-classifier
+    app.kubernetes.io/part-of: lipid-class-classifier
+

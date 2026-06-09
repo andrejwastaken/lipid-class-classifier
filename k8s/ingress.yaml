@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lipid-classifier
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-classifier
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: lipid-classifier.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lipid-frontend
+                port:
+                  name: http
+

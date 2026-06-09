@@ -240,6 +240,19 @@ Reset database, RabbitMQ, and uploaded files:
 docker compose down -v
 ```
 
+## Kubernetes Deployment
+
+Kubernetes manifests are in `k8s/`. PostgreSQL is deployed with the Bitnami PostgreSQL Helm chart in replication mode, with one primary and one read replica. The application manifests cover the backend, frontend, ML worker, RabbitMQ, services, ingress, ConfigMaps, Secrets, and PVCs.
+
+Start with:
+
+```text
+k8s/README.md
+k8s/postgres/README.md
+```
+
+Before deploying, replace the Docker image placeholders with the DockerHub namespace used by the GitHub CI publish workflow, create real Kubernetes secrets, and make the trained model artifact available on the worker artifact PVC.
+
 ## Local Smoke Test
 
 After `docker compose up --build`, use the browser:

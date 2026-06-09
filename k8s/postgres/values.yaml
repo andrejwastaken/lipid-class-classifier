@@ -1,0 +1,22 @@
+architecture: replication
+
+auth:
+  username: user
+  database: app_db
+  existingSecret: lipid-postgres-secret
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+    replicationPasswordKey: replication-password
+
+primary:
+  persistence:
+    enabled: true
+    size: 1Gi
+
+readReplicas:
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 1Gi
+

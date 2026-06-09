@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lipid-backend-config
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-backend
+    app.kubernetes.io/part-of: lipid-class-classifier
+data:
+  DB_URL: jdbc:postgresql://lipid-postgres-postgresql-primary.lipid-classifier.svc.cluster.local:5432/app_db
+  DB_USER: user
+  RABBITMQ_HOST: lipid-rabbitmq
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USER: guest
+  UPLOAD_DIR: /app/uploads
+  ML_JOBS_QUEUE: ml_jobs
+  ML_JOB_PUBLISH_MAX_ATTEMPTS: "3"
+  ML_JOB_PUBLISH_RETRY_BACKOFF_MS: "250"
+  MAX_UPLOAD_FILE_SIZE: 100MB
+  MAX_UPLOAD_REQUEST_SIZE: 100MB
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lipid-backend-secret
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-backend
+    app.kubernetes.io/part-of: lipid-class-classifier
+type: Opaque
+stringData:
+  DB_PASSWORD: password
+  JWT_SECRET: change-me-to-a-long-random-secret-before-deploying
+  RABBITMQ_PASSWORD: guest
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lipid-uploads-pvc
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-uploads
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lipid-backend
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-backend
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lipid-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lipid-backend
+        app.kubernetes.io/part-of: lipid-class-classifier
+    spec:
+      containers:
+        - name: backend
+          image: docker.io/aristikj/lipid-classifier-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: lipid-backend-config
+            - secretRef:
+                name: lipid-backend-secret
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: lipid-uploads-pvc
