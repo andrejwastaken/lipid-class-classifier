@@ -70,6 +70,27 @@ kubectl edit secret lipid-rabbitmq-secret -n lipid-classifier
 
 The checked-in Secret manifests contain local demo credentials only.
 
+## Optional Argo CD Deployment
+
+The optional CD bonus is documented in:
+
+```text
+k8s/argocd/README.md
+```
+
+Argo CD uses two applications:
+
+- `lipid-postgres`: deploys the Bitnami PostgreSQL Helm chart with `architecture: replication`.
+- `lipid-classifier`: deploys this repository's `k8s/` manifests from GitHub `main`.
+
+Install the Argo CD applications after Argo CD is running in the cluster:
+
+```bash
+kubectl apply -f k8s/argocd/project.yaml
+kubectl apply -f k8s/argocd/postgres-application.yaml
+kubectl apply -f k8s/argocd/application.yaml
+```
+
 ## Model Artifact
 
 The worker expects the trained model at:

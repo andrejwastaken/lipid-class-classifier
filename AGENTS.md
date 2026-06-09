@@ -118,12 +118,180 @@ Use these deliverables when asked to implement one or more parts/phases. If a us
   - choose one CI platform (GitHub Actions, GitLab CI, Jenkins, etc.).
   - set up a CI or CI/CD pipeline where a git push builds and publishes the new Docker image version to a registry such as DockerHub.
   - optional bonus: add CD that deploys to a deployment environment using Docker orchestration, Kubernetes, Argo CD, or similar.
+  - when implementing the optional CD bonus, prefer Argo CD manifests under `k8s/argocd/` that sync GitHub `main` and the Kubernetes app manifests.
 - Required Kubernetes deliverables:
   - Deployment for the application with required ConfigMaps/Secrets.
   - Service for the application.
   - Ingress for the application.
   - StatefulSet for the database with required ConfigMaps/Secrets.
   - place manifests in a separate namespace on the user's cluster and demonstrate that it works.
+
+## Kubernetes PostgreSQL Replication Requirement
+
+Implement PostgreSQL database replication as mandatory for the Kubernetes deployment.
+
+Use the Bitnami PostgreSQL Helm chart instead of manually writing PostgreSQL primary/standby replication manifests. PostgreSQL replication should not be implemented by simply setting `replicas: 2` on a normal PostgreSQL StatefulSet, because PostgreSQL requires configured primary/read-replica replication.
+
+### Required architecture
+
+The Kubernetes deployment must include:
+
+- PostgreSQL primary instance for read/write traffic
+- At least one PostgreSQL read replica
+- Persistent storage for both primary and replica pods
+- Kubernetes Secret for database credentials
+- Kubernetes ConfigMap/values file for non-secret configuration
+- Backend connected to the PostgreSQL primary service
+- Optional read-only connection string pointing to the PostgreSQL read replica service
+
+Use the Bitnami chart with:
+
+```yaml
+architecture: replication
+
+readReplicas:
+  replicaCount: 1
+```
+
+The chart supports `architecture: replication`, and read replicas are configured through `readReplicas.replicaCount`.
+
+### Required Kubernetes files
+
+The Kubernetes deployment should include these files:
+
+```text
+k8s/
+  namespace.yaml
+  postgres/
+    values.yaml
+    README.md
+  backend-deployment.yaml
+  frontend-deployment.yaml
+  ml-worker-deployment.yaml
+  rabbitmq-deployment.yaml
+  services.yaml
+  ingress.yaml
+```
+
+### PostgreSQL Helm values
+
+Create `k8s/postgres/values.yaml` with a primary plus one read replica.
+
+Use values similar to:
+
+```yaml
+architecture: replication
+
+auth:
+  username: user
+  database: app_db
+  existingSecret: lipid-postgres-secret
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+    replicationPasswordKey: replication-password
+
+primary:
+  persistence:
+    enabled: true
+    size: 1Gi
+
+readReplicas:
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 1Gi
+```
+
+Do not hardcode real passwords in Git.
+
+Create a Kubernetes Secret manifest or document the command for creating it manually:
+
+```bash
+kubectl create secret generic lipid-postgres-secret \
+  -n lipid-classifier \
+  --from-literal=postgres-password=postgres \
+  --from-literal=password=password \
+  --from-literal=replication-password=replication-password
+```
+
+### Helm install command
+
+Document and support deployment with:
+
+```bash
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+
+kubectl create namespace lipid-classifier
+
+helm upgrade --install lipid-postgres bitnami/postgresql \
+  -n lipid-classifier \
+  -f k8s/postgres/values.yaml
+```
+
+### Backend database connection
+
+The backend should connect to the PostgreSQL primary service for writes.
+
+Use the internal Kubernetes DNS name:
+
+```text
+lipid-postgres-postgresql-primary.lipid-classifier.svc.cluster.local:5432
+```
+
+The backend database env vars should be configured through Secret/ConfigMap, for example:
+
+```yaml
+SPRING_DATASOURCE_URL=jdbc:postgresql://lipid-postgres-postgresql-primary.lipid-classifier.svc.cluster.local:5432/app_db
+SPRING_DATASOURCE_USERNAME=user
+SPRING_DATASOURCE_PASSWORD=password
+```
+
+Do not connect write traffic to the read replica.
+
+If read-only traffic is implemented, use the read replica service separately:
+
+```text
+lipid-postgres-postgresql-read.lipid-classifier.svc.cluster.local:5432
+```
+
+### Verification commands
+
+Add verification instructions to `k8s/postgres/README.md`:
+
+```bash
+kubectl get pods -n lipid-classifier
+kubectl get statefulsets -n lipid-classifier
+kubectl get svc -n lipid-classifier
+```
+
+Expected result:
+
+```text
+lipid-postgres-postgresql-primary-0
+lipid-postgres-postgresql-read-0
+```
+
+Also verify that backend can connect to the primary database and that the application can create/read jobs successfully.
+
+### Important note
+
+Do not replace PostgreSQL with MongoDB. The application already uses PostgreSQL. MongoDB replica sets may be easier to configure, but this project should keep PostgreSQL and satisfy replication using the Helm chart.
+
+## Optional Argo CD CD Requirement
+
+When the optional CD bonus is requested, implement Argo CD configuration in `k8s/argocd/`.
+
+The Argo CD setup should include:
+
+- an AppProject for the Lipid Class Classifier deployment.
+- an Argo CD Application for the Bitnami PostgreSQL Helm chart in replication mode.
+- an Argo CD Application for the app manifests from the GitHub repository.
+- documentation for prerequisites, secret creation, sync commands, and verification.
+
+The app Application should use GitHub `main` as the deployment source of truth. Do not point Argo CD at GitLab unless explicitly requested.
+
 - See `notes/devops-ci-cd-requirements.md` for the grading breakdown and implementation assumptions.
 
 ### Part 9 (Polish)

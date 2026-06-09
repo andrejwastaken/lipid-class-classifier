@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lipid-classifier
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: lipid-class-classifier
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  project: lipid-classifier
+  source:
+    repoURL: https://github.com/andrejwastaken/lipid-class-classifier.git
+    targetRevision: main
+    path: k8s
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lipid-classifier
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

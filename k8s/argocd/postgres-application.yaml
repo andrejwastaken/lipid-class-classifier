@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lipid-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  project: lipid-classifier
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: postgresql
+    targetRevision: "*"
+    helm:
+      releaseName: lipid-postgres
+      values: |
+        architecture: replication
+
+        auth:
+          username: user
+          database: app_db
+          existingSecret: lipid-postgres-secret
+          secretKeys:
+            adminPasswordKey: postgres-password
+            userPasswordKey: password
+            replicationPasswordKey: replication-password
+
+        primary:
+          persistence:
+            enabled: true
+            size: 1Gi
+
+        readReplicas:
+          replicaCount: 1
+          persistence:
+            enabled: true
+            size: 1Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lipid-classifier
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -253,6 +253,14 @@ k8s/postgres/README.md
 
 Before deploying, replace the Docker image placeholders with the DockerHub namespace used by the GitHub CI publish workflow, create real Kubernetes secrets, and make the trained model artifact available on the worker artifact PVC.
 
+Optional CD with Argo CD is available in:
+
+```text
+k8s/argocd/README.md
+```
+
+The Argo CD setup continuously syncs the application manifests from GitHub `main` and deploys PostgreSQL through the Bitnami Helm chart in replication mode.
+
 ## Local Smoke Test
 
 After `docker compose up --build`, use the browser:
