@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,12 @@ from uuid import uuid4
 
 from ml_core.artifacts import load_artifact_bundle, predict_mzml_file
 
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+logger = logging.getLogger("lipid-worker")
 
 DEFAULT_ARTIFACT_PATH = Path(__file__).resolve().parent / "artifacts" / "lipid_class_pipeline.joblib"
 DEFAULT_MS_LEVEL = 2
@@ -44,13 +51,28 @@ class LipidClassifierWorker:
     def __init__(self, artifact_path: Path = DEFAULT_ARTIFACT_PATH, ms_level: int | None = DEFAULT_MS_LEVEL) -> None:
         self.artifact_path = artifact_path
         self.ms_level = ms_level
+        logger.info("Loading model artifact from %s", artifact_path)
         self.bundle = load_artifact_bundle(artifact_path)
+        metadata = self.bundle.get("metadata", {})
+        logger.info(
+            "Loaded model artifact version=%s best_model=%s ms_level=%s",
+            metadata.get("artifact_version", "unknown"),
+            metadata.get("best_model", "unknown"),
+            self.ms_level if self.ms_level is not None else "all",
+        )
 
     def process_job(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
         try:
             job = JobPayload.from_mapping(payload)
+            logger.info("Starting inference job_id=%s user_id=%s file_path=%s", job.job_id, job.user_id, job.file_path)
             prediction = predict_mzml_file(self.bundle, job.file_path, ms_level=self.ms_level)
             metadata = self.bundle.get("metadata", {})
+            logger.info(
+                "Finished inference job_id=%s predicted_class=%s probability=%.6f",
+                job.job_id,
+                prediction["predicted_class"],
+                prediction["probability"],
+            )
 
             return {
                 "job_id": job.job_id,
@@ -77,6 +99,7 @@ class LipidClassifierWorker:
         except Exception as exc:
             job_id = str(payload.get("job_id", "")) if isinstance(payload, Mapping) else ""
             user_id = str(payload.get("user_id", "")) if isinstance(payload, Mapping) else ""
+            logger.exception("Failed inference job_id=%s user_id=%s", job_id or "unknown", user_id or "unknown")
             return {
                 "job_id": job_id,
                 "user_id": user_id,
@@ -173,14 +196,17 @@ def persist_result_to_postgres(result: Dict[str, Any], settings: PostgresSetting
     import psycopg
 
     settings = settings or PostgresSettings.from_env()
+    logger.info("Persisting result job_id=%s status=%s", result.get("job_id", "unknown"), result.get("status", "unknown"))
     with psycopg.connect(**settings.connection_kwargs()) as connection:
         write_prediction_result(connection, result)
+    logger.info("Persisted result job_id=%s status=%s", result.get("job_id", "unknown"), result.get("status", "unknown"))
 
 
 def mark_job_processing_in_postgres(payload: Mapping[str, Any], settings: PostgresSettings | None = None) -> None:
     import psycopg
 
     settings = settings or PostgresSettings.from_env()
+    logger.info("Marking job PROCESSING job_id=%s", payload.get("job_id", "unknown"))
     with psycopg.connect(**settings.connection_kwargs()) as connection:
         mark_job_processing(connection, payload)
 
@@ -304,16 +330,20 @@ def consume_rabbitmq_jobs(settings: RabbitMqSettings | None = None) -> JobConsum
         channel.basic_qos(prefetch_count=1)
 
         def on_message(ch: Any, method: Any, properties: Any, body: bytes) -> None:
+            delivery_tag = getattr(method, "delivery_tag", "unknown")
             try:
                 payload = json.loads(body.decode("utf-8"))
+                logger.info("Received RabbitMQ message delivery_tag=%s job_id=%s", delivery_tag, payload.get("job_id", "unknown"))
                 handle_job(payload)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
+                logger.info("Acknowledged RabbitMQ message delivery_tag=%s job_id=%s", delivery_tag, payload.get("job_id", "unknown"))
             except Exception:
+                logger.exception("Rejecting RabbitMQ message delivery_tag=%s", delivery_tag)
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
                 raise
 
         channel.basic_consume(queue=settings.queue_name, on_message_callback=on_message)
-        print(f"Consuming RabbitMQ queue {settings.queue_name} at {settings.host}:{settings.port}", flush=True)
+        logger.info("Consuming RabbitMQ queue %s at %s:%s", settings.queue_name, settings.host, settings.port)
         channel.start_consuming()
 
     return consume_jobs

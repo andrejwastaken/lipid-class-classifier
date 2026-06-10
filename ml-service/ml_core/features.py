@@ -1,9 +1,13 @@
+import logging
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
 import numpy as np
 from scipy import sparse
 from sklearn.base import BaseEstimator, TransformerMixin
+
+
+logger = logging.getLogger("lipid-worker.ml_core.features")
 
 
 def parse_mz_values(value: object) -> np.ndarray:
@@ -36,6 +40,13 @@ def mzml_to_mz_values(path: Path, ms_level: int | None = None) -> List[float]:
         mz_array, _ = spectrum.get_peaks()
         mz_values.extend(float(mz) for mz in mz_array)
 
+    logger.info(
+        "Extracted %s m/z values from %s spectra in %s with ms_level=%s",
+        len(mz_values),
+        len(experiment.getSpectra()),
+        path,
+        ms_level if ms_level is not None else "all",
+    )
     return mz_values
 
 
