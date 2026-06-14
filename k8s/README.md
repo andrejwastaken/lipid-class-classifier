@@ -146,6 +146,19 @@ Smoke test the app through the browser:
 
 ## Common Local Issues
 
+If uploads fail through Kubernetes with `413 Request Entity Too Large`, re-apply the ingress manifest so NGINX Ingress picks up the upload body-size limit:
+
+```bash
+kubectl apply -f k8s/ingress.yaml
+kubectl describe ingress lipid-classifier -n lipid-classifier
+```
+
+The ingress should include:
+
+```text
+nginx.ingress.kubernetes.io/proxy-body-size: 100m
+```
+
 If pods show `ImagePullBackOff` and `docker pull` says there is no `linux/arm64` manifest, the DockerHub image was built only for `linux/amd64`. Push the current GitHub workflow update, wait for the image publish job to complete, then restart the deployments:
 
 ```bash

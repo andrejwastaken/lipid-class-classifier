@@ -595,10 +595,6 @@ function ResultScreen({
 						label="Confidence"
 						value={job.confidence_label ?? "Unknown"}
 					/>
-					<ResultCard
-						label="Model version"
-						value={job.model_version ?? "Unknown"}
-					/>
 				</div>
 			)}
 
