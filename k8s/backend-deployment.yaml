@@ -70,7 +70,7 @@ spec:
       containers:
         - name: backend
           image: docker.io/aristikj/lipid-classifier-backend:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
