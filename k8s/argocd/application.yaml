@@ -6,14 +6,29 @@ metadata:
   labels:
     app.kubernetes.io/name: lipid-class-classifier
     app.kubernetes.io/part-of: lipid-class-classifier
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: >-
+      backend=docker.io/aristikj/lipid-classifier-backend,
+      frontend=docker.io/aristikj/lipid-classifier-frontend,
+      ml-worker=docker.io/aristikj/lipid-classifier-ml-worker
+    argocd-image-updater.argoproj.io/backend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/backend.allow-tags: regexp:^[0-9a-f]{40}$
+    argocd-image-updater.argoproj.io/backend.kustomize.image-name: docker.io/aristikj/lipid-classifier-backend
+    argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^[0-9a-f]{40}$
+    argocd-image-updater.argoproj.io/frontend.kustomize.image-name: docker.io/aristikj/lipid-classifier-frontend
+    argocd-image-updater.argoproj.io/ml-worker.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/ml-worker.allow-tags: regexp:^[0-9a-f]{40}$
+    argocd-image-updater.argoproj.io/ml-worker.kustomize.image-name: docker.io/aristikj/lipid-classifier-ml-worker
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
+    argocd-image-updater.argoproj.io/git-branch: main
+    argocd-image-updater.argoproj.io/write-back-target: kustomization:.
 spec:
   project: lipid-classifier
   source:
     repoURL: https://github.com/andrejwastaken/lipid-class-classifier.git
     targetRevision: main
     path: k8s
-    directory:
-      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: lipid-classifier

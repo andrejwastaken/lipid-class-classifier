@@ -7,9 +7,9 @@ metadata:
     app.kubernetes.io/name: lipid-ml-worker
     app.kubernetes.io/part-of: lipid-class-classifier
 data:
-  DB_URL: jdbc:postgresql://lipid-postgres-postgresql-primary.lipid-classifier.svc.cluster.local:5432/app_db
+  DB_URL: jdbc:postgresql://lipid-postgres-primary.lipid-classifier.svc.cluster.local:5432/app_db
   DB_USER: user
-  POSTGRES_HOST: lipid-postgres-postgresql-primary.lipid-classifier.svc.cluster.local
+  POSTGRES_HOST: lipid-postgres-primary.lipid-classifier.svc.cluster.local
   POSTGRES_PORT: "5432"
   POSTGRES_DB: app_db
   POSTGRES_USER: user

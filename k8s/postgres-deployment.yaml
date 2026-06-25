@@ -1,0 +1,344 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lipid-postgres-secret
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/part-of: lipid-class-classifier
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: password
+  REPLICATION_PASSWORD: replication-password
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lipid-postgres-scripts
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/part-of: lipid-class-classifier
+data:
+  primary-init.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Create the dedicated replication role. This init script only runs on the
+    # primary's first initialization, so a plain CREATE ROLE is safe. The
+    # password is passed as a psql variable to avoid quoting issues.
+    psql -v ON_ERROR_STOP=1 -v repl_pw="$REPLICATION_PASSWORD" \
+      --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
+    CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD :'repl_pw';
+    SQL
+
+    # Allow the replicator role to open replication connections from any pod in
+    # the cluster network.
+    cat >> "$PGDATA/pg_hba.conf" <<'HBA'
+    host replication replicator 0.0.0.0/0 scram-sha-256
+    host replication replicator ::/0      scram-sha-256
+    HBA
+
+  replica-bootstrap.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    if [ -s "$PGDATA/PG_VERSION" ]; then
+      echo "Data directory already initialized; skipping base backup."
+      exit 0
+    fi
+
+    export PGPASSWORD="$REPLICATION_PASSWORD"
+
+    echo "Waiting for primary $PRIMARY_HOST to accept connections..."
+    until pg_isready -h "$PRIMARY_HOST" -p 5432 -U replicator >/dev/null 2>&1; do
+      sleep 2
+    done
+
+    echo "Running base backup from $PRIMARY_HOST..."
+    pg_basebackup -h "$PRIMARY_HOST" -p 5432 -U replicator \
+      -D "$PGDATA" -Fp -Xs -P -R -w
+
+    # -R creates standby.signal and a primary_conninfo line, but omits the
+    # password. Append an explicit conninfo (later entries win) so the standby
+    # can authenticate after a restart.
+    cat >> "$PGDATA/postgresql.auto.conf" <<CONF
+    primary_conninfo = 'host=$PRIMARY_HOST port=5432 user=replicator password=$REPLICATION_PASSWORD application_name=$(hostname)'
+    CONF
+
+    echo "Standby configured."
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lipid-postgres-primary-headless
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lipid-postgres-primary
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: primary
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lipid-postgres-read-headless
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: replica
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: replica
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lipid-postgres-read
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: replica
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: replica
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lipid-postgres-primary
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  serviceName: lipid-postgres-primary-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lipid-postgres
+      app.kubernetes.io/component: primary
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lipid-postgres
+        app.kubernetes.io/component: primary
+        app.kubernetes.io/part-of: lipid-class-classifier
+    spec:
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:17
+          args:
+            - postgres
+            - -c
+            - listen_addresses=*
+            - -c
+            - wal_level=replica
+            - -c
+            - max_wal_senders=10
+            - -c
+            - max_replication_slots=10
+            - -c
+            - hot_standby=on
+            - -c
+            - wal_keep_size=256MB
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: app_db
+            - name: POSTGRES_USER
+              value: user
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lipid-postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lipid-postgres-secret
+                  key: REPLICATION_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: scripts
+              mountPath: /docker-entrypoint-initdb.d/primary-init.sh
+              subPath: primary-init.sh
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "user", "-d", "app_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "user", "-d", "app_db"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: scripts
+          configMap:
+            name: lipid-postgres-scripts
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: lipid-postgres-read
+  namespace: lipid-classifier
+  labels:
+    app.kubernetes.io/name: lipid-postgres
+    app.kubernetes.io/component: replica
+    app.kubernetes.io/part-of: lipid-class-classifier
+spec:
+  serviceName: lipid-postgres-read-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lipid-postgres
+      app.kubernetes.io/component: replica
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lipid-postgres
+        app.kubernetes.io/component: replica
+        app.kubernetes.io/part-of: lipid-class-classifier
+    spec:
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      initContainers:
+        - name: bootstrap-standby
+          image: postgres:17
+          command: ["/bin/bash", "/scripts/replica-bootstrap.sh"]
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: PRIMARY_HOST
+              value: lipid-postgres-primary
+            - name: REPLICATION_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lipid-postgres-secret
+                  key: REPLICATION_PASSWORD
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: scripts
+              mountPath: /scripts
+      containers:
+        - name: postgres
+          image: postgres:17
+          args:
+            - postgres
+            - -c
+            - listen_addresses=*
+            - -c
+            - hot_standby=on
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "user", "-d", "app_db"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "user", "-d", "app_db"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: scripts
+          configMap:
+            name: lipid-postgres-scripts
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi

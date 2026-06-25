@@ -1,11 +1,10 @@
 # Kubernetes Deployment
 
-These manifests deploy the Lipid Class Classifier application into the `lipid-classifier` namespace. PostgreSQL is deployed separately with the Bitnami Helm chart in replication mode so the database has a primary and one read replica.
+These manifests deploy the Lipid Class Classifier application into the `lipid-classifier` namespace. PostgreSQL runs as hand-written StatefulSets (`postgres-deployment.yaml`) using physical streaming replication, with one read/write primary and one read-only replica. Everything, including the database, is part of the `k8s/` Kustomize overlay.
 
 ## Prerequisites
 
 - Kubernetes cluster with an Ingress controller, such as NGINX Ingress.
-- Helm 3.
 - Docker images published by the GitHub CI workflow.
 - Trained model artifact available outside Git: `lipid_class_pipeline.joblib`.
 - Storage class for PVCs. The local demo manifest uses `ReadWriteOnce`, which works on a single-node local cluster where backend and worker are scheduled onto the same node. For a multi-node cluster, change `lipid-uploads-pvc` to `ReadWriteMany` and use a storage class that supports RWX.
@@ -26,32 +25,34 @@ docker.io/your-dockerhub-username/lipid-classifier-backend:latest
 
 On Apple Silicon or other ARM machines, Kubernetes needs `linux/arm64` images. The GitHub workflow publishes multi-architecture images for `linux/amd64` and `linux/arm64`; after changing the workflow, push to the GitHub `main` branch and wait for the Docker publish workflow to finish before restarting the Kubernetes deployments.
 
-## Deploy PostgreSQL
+## PostgreSQL Replication
 
-Follow the PostgreSQL-specific instructions:
+PostgreSQL is defined manually in `postgres-deployment.yaml`:
 
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl create secret generic lipid-postgres-secret \
-  -n lipid-classifier \
-  --from-literal=postgres-password=postgres \
-  --from-literal=password=password \
-  --from-literal=replication-password=replication-password
+- `lipid-postgres-primary` StatefulSet — the read/write primary. On first start it creates a dedicated `replicator` role and opens `pg_hba.conf` for replication connections.
+- `lipid-postgres-read` StatefulSet — a hot-standby replica. Its init container clones the primary with `pg_basebackup` and starts in standby mode using physical streaming replication.
+- `lipid-postgres-secret` — manually managed credentials (the app password and the replication password). The checked-in values are local demo values; replace them before production.
 
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-helm upgrade --install lipid-postgres bitnami/postgresql \
-  -n lipid-classifier \
-  -f k8s/postgres/values.yaml
-```
+Services:
 
-For real deployments, use strong secret values instead of the local demo values above.
+- `lipid-postgres-primary` — read/write endpoint used by the backend and ML worker.
+- `lipid-postgres-read` — read-only endpoint for replica traffic (the application does not need to change to use it).
+
+The database is deployed together with the rest of the app via the Kustomize overlay below; no Helm is required.
 
 ## Deploy Application Services
 
-Apply the RabbitMQ, backend, worker, service, frontend, and ingress manifests:
+`k8s/` is a Kustomize overlay (`kustomization.yaml`) covering the namespace, PostgreSQL, RabbitMQ, backend, ML worker, frontend, services, and ingress, so the whole app deploys in one command:
 
 ```bash
+kubectl apply -k k8s
+```
+
+Or apply the individual manifests:
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/postgres-deployment.yaml
 kubectl apply -f k8s/rabbitmq-deployment.yaml
 kubectl apply -f k8s/backend-deployment.yaml
 kubectl apply -f k8s/ml-worker-deployment.yaml
@@ -66,6 +67,7 @@ Update the app secrets before production use:
 kubectl edit secret lipid-backend-secret -n lipid-classifier
 kubectl edit secret lipid-ml-worker-secret -n lipid-classifier
 kubectl edit secret lipid-rabbitmq-secret -n lipid-classifier
+kubectl edit secret lipid-postgres-secret -n lipid-classifier
 ```
 
 The checked-in Secret manifests contain local demo credentials only.
@@ -78,16 +80,12 @@ The optional CD bonus is documented in:
 k8s/argocd/README.md
 ```
 
-Argo CD uses two applications:
+Argo CD uses a single application, `lipid-classifier`, which deploys this repository's `k8s/` Kustomize overlay (including the manual PostgreSQL StatefulSets) from GitHub `main`. Argo CD Image Updater watches DockerHub and auto-rolls out each new pushed build by committing the new image tag back to `k8s/kustomization.yaml` — see `k8s/argocd/README.md`.
 
-- `lipid-postgres`: deploys the Bitnami PostgreSQL Helm chart with `architecture: replication`.
-- `lipid-classifier`: deploys this repository's `k8s/` manifests from GitHub `main`.
-
-Install the Argo CD applications after Argo CD is running in the cluster:
+Install after Argo CD is running in the cluster:
 
 ```bash
 kubectl apply -f k8s/argocd/project.yaml
-kubectl apply -f k8s/argocd/postgres-application.yaml
 kubectl apply -f k8s/argocd/application.yaml
 ```
 
@@ -130,11 +128,25 @@ kubectl get svc -n lipid-classifier
 kubectl get ingress -n lipid-classifier
 ```
 
-Expected PostgreSQL pods after Helm install:
+Expected PostgreSQL pods:
 
 ```text
-lipid-postgres-postgresql-primary-0
-lipid-postgres-postgresql-read-0
+lipid-postgres-primary-0
+lipid-postgres-read-0
+```
+
+Confirm replication is streaming (run against the primary pod):
+
+```bash
+kubectl exec -n lipid-classifier lipid-postgres-primary-0 -- \
+  psql -U user -d app_db -c "SELECT client_addr, state, sync_state FROM pg_stat_replication;"
+```
+
+One row in `streaming` state means the replica is connected. You can also confirm the replica is read-only:
+
+```bash
+kubectl exec -n lipid-classifier lipid-postgres-read-0 -- \
+  psql -U user -d app_db -c "SELECT pg_is_in_recovery();"   # expect: t
 ```
 
 Smoke test the app through the browser:

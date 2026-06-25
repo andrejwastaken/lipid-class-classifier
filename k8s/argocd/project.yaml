@@ -7,7 +7,6 @@ spec:
   description: Lipid Class Classifier GitOps project
   sourceRepos:
     - https://github.com/andrejwastaken/lipid-class-classifier.git
-    - https://charts.bitnami.com/bitnami
   destinations:
     - namespace: lipid-classifier
       server: https://kubernetes.default.svc

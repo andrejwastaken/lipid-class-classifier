@@ -242,13 +242,12 @@ docker compose down -v
 
 ## Kubernetes Deployment
 
-Kubernetes manifests are in `k8s/`. PostgreSQL is deployed with the Bitnami PostgreSQL Helm chart in replication mode, with one primary and one read replica. The application manifests cover the backend, frontend, ML worker, RabbitMQ, services, ingress, ConfigMaps, Secrets, and PVCs.
+Kubernetes manifests are in `k8s/`, organized as a Kustomize overlay. PostgreSQL runs as hand-written StatefulSets using physical streaming replication, with one read/write primary and one read-only replica. The application manifests cover the backend, frontend, ML worker, RabbitMQ, services, ingress, ConfigMaps, Secrets, and PVCs.
 
 Start with:
 
 ```text
 k8s/README.md
-k8s/postgres/README.md
 ```
 
 Before deploying, replace the Docker image placeholders with the DockerHub namespace used by the GitHub CI publish workflow, create real Kubernetes secrets, and make the trained model artifact available on the worker artifact PVC.
@@ -259,7 +258,7 @@ Optional CD with Argo CD is available in:
 k8s/argocd/README.md
 ```
 
-The Argo CD setup continuously syncs the application manifests from GitHub `main` and deploys PostgreSQL through the Bitnami Helm chart in replication mode.
+The Argo CD setup continuously syncs the full application (including PostgreSQL) from GitHub `main`, and Argo CD Image Updater auto-rolls out each new image published by CI.
 
 ## Local Smoke Test
 
