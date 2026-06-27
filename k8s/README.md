@@ -2,6 +2,8 @@
 
 These manifests deploy the Lipid Class Classifier application into the `lipid-classifier` namespace. PostgreSQL runs as hand-written StatefulSets (`postgres-deployment.yaml`) using physical streaming replication, with one read/write primary and one read-only replica. Everything, including the database, is part of the `k8s/` Kustomize overlay.
 
+For a visual overview of every object and how they connect, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## Prerequisites
 
 - Kubernetes cluster with an Ingress controller, such as NGINX Ingress.
@@ -185,4 +187,4 @@ If `lipid-uploads-pvc` stays `Pending`, check the event message:
 kubectl get events -n lipid-classifier --sort-by=.lastTimestamp
 ```
 
-The local demo manifest uses `ReadWriteOnce` for the uploads PVC because Rancher Desktop's default local path storage does not support `ReadWriteMany`.
+The local demo manifest uses `ReadWriteOnce` for the uploads PVC because Docker Desktop's default local path storage does not support `ReadWriteMany`.

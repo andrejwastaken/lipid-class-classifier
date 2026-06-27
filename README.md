@@ -250,6 +250,12 @@ Start with:
 k8s/README.md
 ```
 
+For a visual overview of every Kubernetes object and how they connect, see:
+
+```text
+k8s/ARCHITECTURE.md
+```
+
 Before deploying, replace the Docker image placeholders with the DockerHub namespace used by the GitHub CI publish workflow, create real Kubernetes secrets, and make the trained model artifact available on the worker artifact PVC.
 
 Optional CD with Argo CD is available in:
