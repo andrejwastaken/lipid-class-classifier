@@ -264,7 +264,7 @@ Optional CD with Argo CD is available in:
 k8s/argocd/README.md
 ```
 
-The Argo CD setup continuously syncs the full application (including PostgreSQL) from GitHub `main`, and Argo CD Image Updater auto-rolls out each new image published by CI.
+The Argo CD setup continuously syncs the full application (including PostgreSQL) from GitHub `main`. The GitHub Actions workflow pins each newly built image's git-SHA tag into `k8s/kustomization.yaml` and commits it back to `main`, so Argo CD rolls out every published build automatically.
 
 ## Local Smoke Test
 

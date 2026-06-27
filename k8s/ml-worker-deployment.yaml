@@ -69,7 +69,7 @@ spec:
       containers:
         - name: ml-worker
           image: docker.io/aristikj/lipid-classifier-ml-worker:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
                 name: lipid-ml-worker-config

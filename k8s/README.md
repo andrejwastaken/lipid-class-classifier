@@ -82,7 +82,7 @@ The optional CD bonus is documented in:
 k8s/argocd/README.md
 ```
 
-Argo CD uses a single application, `lipid-classifier`, which deploys this repository's `k8s/` Kustomize overlay (including the manual PostgreSQL StatefulSets) from GitHub `main`. Argo CD Image Updater watches DockerHub and auto-rolls out each new pushed build by committing the new image tag back to `k8s/kustomization.yaml` — see `k8s/argocd/README.md`.
+Argo CD uses a single application, `lipid-classifier`, which deploys this repository's `k8s/` Kustomize overlay (including the manual PostgreSQL StatefulSets) from GitHub `main`. The GitHub Actions workflow pins each new build's git-SHA tag into `k8s/kustomization.yaml` and commits it back to `main`, so Argo CD auto-rolls out every published build — see `k8s/argocd/README.md`.
 
 Install after Argo CD is running in the cluster:
 

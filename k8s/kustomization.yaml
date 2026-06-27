@@ -13,8 +13,8 @@ resources:
   
 images:
   - name: docker.io/aristikj/lipid-classifier-backend
-    newTag: latest
+    newTag: 1842dee095bc55a07a041ba590b103fa1d20ed8e
   - name: docker.io/aristikj/lipid-classifier-frontend
-    newTag: latest
+    newTag: 1842dee095bc55a07a041ba590b103fa1d20ed8e
   - name: docker.io/aristikj/lipid-classifier-ml-worker
-    newTag: latest
+    newTag: 1842dee095bc55a07a041ba590b103fa1d20ed8e

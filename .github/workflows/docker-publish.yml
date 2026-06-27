@@ -54,3 +54,46 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.image }}:${{ github.sha }}
+
+  update-manifests:
+    name: Pin image tags in manifests
+    needs: docker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Pin new image tags in kustomization.yaml
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for svc in backend frontend ml-worker; do
+            name="docker.io/${DOCKERHUB_USERNAME}/lipid-classifier-${svc}"
+            yq -i \
+              "(.images[] | select(.name == \"${name}\") | .newTag) = \"${IMAGE_TAG}\"" \
+              k8s/kustomization.yaml
+          done
+          echo "Updated image tags:"
+          yq '.images' k8s/kustomization.yaml
+
+      - name: Commit and push tag bump
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- k8s/kustomization.yaml; then
+            echo "No tag changes to commit."
+            exit 0
+          fi
+          git add k8s/kustomization.yaml
+          git commit -m "ci: pin image tags to ${IMAGE_TAG} [skip ci]"
+          git push origin HEAD:main

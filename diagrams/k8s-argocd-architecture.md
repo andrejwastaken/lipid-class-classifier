@@ -17,12 +17,12 @@ flowchart TB
 
     subgraph CI["CI — GitHub Actions (.github/workflows/docker-publish.yml)"]
         build["Build 3 images<br/>(frontend, backend, ml-worker)<br/>multi-arch amd64 + arm64"]
+        pin["update-manifests job (needs: build)<br/>pin :&lt;git-sha&gt; into k8s/kustomization.yaml"]
     end
 
     dh["DockerHub registry<br/>image:latest + image:&lt;git-sha&gt;"]
 
     subgraph CD["CD — Argo CD (argocd namespace)"]
-        iu["Argo CD Image Updater<br/>watches DockerHub for new &lt;git-sha&gt; tags"]
         argo["Argo CD Application: lipid-classifier<br/>auto-sync + self-heal"]
     end
 
@@ -48,11 +48,12 @@ flowchart TB
     %% CI/CD flow
     dev -->|git push| gh
     gh -->|push trigger| build
-    build -->|docker push| dh
-    dh -->|new tag detected| iu
-    iu -->|"git write-back: bump tag in<br/>k8s/kustomization.yaml, commit to main"| gh
+    build -->|"docker push :latest + :&lt;git-sha&gt;"| dh
+    build -->|after all images pushed| pin
+    pin -->|"git commit + push tag bump<br/>to main (GITHUB_TOKEN, [skip ci])"| gh
     gh -->|polls git, renders Kustomize| argo
     argo -->|kubectl apply| NS
+    dh -.->|image pull| NS
 
     %% Runtime flow
     user["End user (browser)"] -->|HTTPS| ing
@@ -79,17 +80,20 @@ flowchart TB
    triggers on the push, builds the three service images (frontend, backend,
    ml-worker) for `linux/amd64` + `linux/arm64`, and pushes them to **DockerHub**
    tagged with both `:latest` and the immutable `:<git-sha>`.
-3. **Argo CD Image Updater** (in the `argocd` namespace) polls DockerHub, detects
-   the newest `<git-sha>`-tagged build for each image, and **writes the new tag
-   back into [k8s/kustomization.yaml](../k8s/kustomization.yaml)**, committing that
-   change to `main` (git write-back method).
+3. A second **`update-manifests` job** in the same workflow (declared with
+   `needs: build`, so it runs only after all three images are pushed) **pins the
+   new `:<git-sha>` into [k8s/kustomization.yaml](../k8s/kustomization.yaml)** with
+   `yq` and **commits the change back to `main`** using the workflow's
+   `GITHUB_TOKEN` (`permissions: contents: write`). The commit carries `[skip ci]`,
+   and `GITHUB_TOKEN` pushes don't retrigger workflows, so there is no build loop.
 4. **Argo CD** continuously watches the Git repo. When it sees the new commit it
    renders the `k8s/` Kustomize overlay and applies it to the cluster
    (`auto-sync` + `self-heal`), so the running pods are updated to the exact
    published version. Git is the single source of truth; rollback is a `git revert`.
 
-> Without Image Updater, steps 3–4 still work — you just bump the image tag in
-> `kustomization.yaml` yourself and push; Argo CD does the rest.
+> The tag-bump runs inside CI rather than a cluster-side controller, so it needs
+> no extra component or credentials, and any failure shows up directly in the
+> GitHub Actions logs.
 
 ## 2. Runtime request flow
 
@@ -139,7 +143,7 @@ kubectl exec -n lipid-classifier lipid-postgres-primary-0 -- \
 ## Namespacing & ownership
 
 - All application resources live in the **`lipid-classifier`** namespace.
-- Argo CD and Image Updater live in the **`argocd`** namespace.
+- Argo CD lives in the **`argocd`** namespace.
 - Once Argo CD manages the app, **Git is the source of truth** — change files
   under `k8s/` and push; do not `kubectl apply`/edit live resources by hand, or
   Argo CD's self-heal will revert the drift.
