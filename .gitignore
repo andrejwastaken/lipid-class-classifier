@@ -21,3 +21,4 @@ ml-service/artifacts/*.pickle
 .idea/
 .DS_Store
 *.log
+deploy/cloud/secrets.cloud.yaml
