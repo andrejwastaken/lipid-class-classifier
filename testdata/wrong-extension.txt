@@ -1,0 +1,2 @@
+This file is not an mzML spectrum.
+It exists so the upload tests can exercise the rejected-extension block.

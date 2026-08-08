@@ -1,5 +1,5 @@
 notes
-AGENTS.md
+CLAUDE.md
 main-flow.excalidraw.png
 .env
 **/.env
@@ -22,3 +22,4 @@ ml-service/artifacts/*.pickle
 .DS_Store
 *.log
 deploy/cloud/secrets.cloud.yaml
+plan.md
