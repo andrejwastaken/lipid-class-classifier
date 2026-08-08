@@ -35,7 +35,7 @@ import kotlin.test.assertTrue
 /**
  * Input Space Partitioning applied to [JobService.createUploadJob].
  *
- * Characteristics and blocks (see plan.md):
+ * Characteristics and blocks:
  *
  *  C1  File content        empty (0 bytes) | non-empty
  *  C2  Original filename   null | "" | valid .mzML | .MZML | .mzml |
@@ -43,7 +43,7 @@ import kotlin.test.assertTrue
  *  C3  Authenticated user  exists in DB | does not exist
  *  C4  Publish outcome     succeeds | throws RuntimeException
  *
- * Coverage criterion: **Base Choice Coverage**. The base choice is
+ * Coverage criterion: Base Choice Coverage. The base choice is
  * (non-empty, "sample.mzML", user exists, publish succeeds) - the ordinary successful upload.
  * Every other test varies exactly one characteristic away from that base choice.
  */
@@ -60,7 +60,7 @@ class JobServiceIspTests {
     private val jobId: UUID = UUID.fromString("22222222-2222-2222-2222-222222222222")
     private val user = AppUser(id = userId, email = "student@example.com", passwordHash = "hash")
 
-    /** Base choice for C1: a few bytes of content, so `file.isEmpty` is false. */
+    // Base choice for C1: a few bytes of content, so `file.isEmpty` is false. 
     private val spectrumBytes = "mzML spectrum payload".toByteArray()
 
     @BeforeEach
@@ -90,8 +90,6 @@ class JobServiceIspTests {
         }
     }
 
-    // ---------------------------------------------------------------- helpers
-
     private fun upload(file: MultipartFile): UploadResponse = service.createUploadJob(userId, file)
 
     private fun file(originalFilename: String?, content: ByteArray = spectrumBytes): MockMultipartFile =
@@ -109,7 +107,7 @@ class JobServiceIspTests {
         return captor.lastValue
     }
 
-    /** Asserts the whole happy-path outcome: accepted response, PENDING job, exactly one message. */
+    // Asserts the whole happy-path outcome: accepted response, PENDING job, exactly one message. 
     private fun assertAcceptedUpload(response: UploadResponse, expectedFilename: String) {
         assertEquals(jobId, response.job_id)
         assertEquals(JobStatus.PENDING, response.status)
@@ -131,8 +129,6 @@ class JobServiceIspTests {
         return exception
     }
 
-    // ------------------------------------------------------------ base choice
-
     @Test
     @DisplayName("base choice: non-empty .mzML from a known user, publish succeeds -> PENDING job")
     fun `base choice is accepted and published exactly once`() {
@@ -147,8 +143,6 @@ class JobServiceIspTests {
         assertEquals(spectrumBytes.toList(), Files.readAllBytes(stored).toList())
     }
 
-    // ------------------------------------------------------- C1: file content
-
     @Nested
     @DisplayName("C1 file content")
     inner class FileContent {
@@ -161,8 +155,6 @@ class JobServiceIspTests {
             verify(publisher, never()).publish(any())
         }
     }
-
-    // --------------------------------------------------- C2: original filename
 
     @Nested
     @DisplayName("C2 original filename")
@@ -217,9 +209,6 @@ class JobServiceIspTests {
         @Test
         @DisplayName("a dotless \"mzML\" is rejected - the guard requires the dot")
         fun `filename without a dot is rejected with 400`() {
-            // plan.md predicted this block would pass through the plain `endsWith`. It does not:
-            // the suffix being matched is ".mzML" (5 chars), so the 4-char "mzML" cannot end
-            // with it. The prediction was wrong; the guard behaves correctly here.
             assertRejected(HttpStatus.BAD_REQUEST) { upload(file("mzML")) }
 
             verify(publisher, never()).publish(any())
@@ -228,8 +217,6 @@ class JobServiceIspTests {
         @Test
         @DisplayName("FINDING: a bare \".mzML\" with no basename is accepted")
         fun `extension-only filename is accepted`() {
-            // This is what the plain `endsWith` really lets through: a file with no name at all,
-            // which is stored as "<uuid>-.mzML".
             assertAcceptedUpload(upload(file(".mzML")), ".mzML")
         }
 
@@ -254,8 +241,6 @@ class JobServiceIspTests {
         }
     }
 
-    // -------------------------------------------------- C3: authenticated user
-
     @Nested
     @DisplayName("C3 authenticated user")
     inner class AuthenticatedUser {
@@ -270,8 +255,6 @@ class JobServiceIspTests {
             verify(publisher, never()).publish(any())
         }
     }
-
-    // ------------------------------------------------------ C4: publish outcome
 
     @Nested
     @DisplayName("C4 queue publish outcome")
