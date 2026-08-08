@@ -11,8 +11,8 @@ resources:
   - ingress.yaml
 images:
   - name: docker.io/aristikj/lipid-classifier-backend
-    newTag: 152fc30269cbd71a3bd981a56057b1e8d5e61df1
+    newTag: 3742058649ff22f4728b842b76f01a7e28b18066
   - name: docker.io/aristikj/lipid-classifier-frontend
-    newTag: 152fc30269cbd71a3bd981a56057b1e8d5e61df1
+    newTag: 3742058649ff22f4728b842b76f01a7e28b18066
   - name: docker.io/aristikj/lipid-classifier-ml-worker
-    newTag: 152fc30269cbd71a3bd981a56057b1e8d5e61df1
+    newTag: 3742058649ff22f4728b842b76f01a7e28b18066
