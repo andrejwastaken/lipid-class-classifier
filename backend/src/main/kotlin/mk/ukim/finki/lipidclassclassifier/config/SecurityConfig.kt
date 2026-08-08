@@ -38,6 +38,12 @@ class SecurityConfig(
             .authorizeHttpRequests {
                 it
                     .requestMatchers("/api/auth/**").permitAll()
+                    // Spring MVC renders error responses by forwarding to /error. That forward is
+                    // an ERROR dispatch, on which OncePerRequestFilter (and so the JWT filter)
+                    // deliberately does not run, leaving no authentication. Without this rule
+                    // every 4xx/5xx was rewritten to the entry-point status, so a duplicate
+                    // registration reached the client as 401 instead of 409.
+                    .requestMatchers("/error").permitAll()
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
