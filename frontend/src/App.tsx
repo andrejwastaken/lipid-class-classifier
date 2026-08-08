@@ -293,11 +293,15 @@ function Header({
 				</div>
 				{isAuthenticated ? (
 					<div className="flex items-center gap-3">
-						<span className="hidden max-w-64 truncate text-sm text-slate-600 sm:inline">
+						<span
+							className="hidden max-w-64 truncate text-sm text-slate-600 sm:inline"
+							data-testid="current-user-email"
+						>
 							{user?.email}
 						</span>
 						<button
 							className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+							data-testid="logout-button"
 							onClick={onLogout}
 							type="button"
 						>
@@ -353,6 +357,7 @@ function AuthScreen({
 								? "bg-slate-900 text-white"
 								: "text-slate-600"
 						}`}
+						data-testid="auth-mode-login"
 						onClick={() => onAuthModeChange("login")}
 						type="button"
 					>
@@ -364,6 +369,7 @@ function AuthScreen({
 								? "bg-slate-900 text-white"
 								: "text-slate-600"
 						}`}
+						data-testid="auth-mode-register"
 						onClick={() => onAuthModeChange("register")}
 						type="button"
 					>
@@ -371,12 +377,13 @@ function AuthScreen({
 					</button>
 				</div>
 
-				<form className="grid gap-4" onSubmit={onSubmit}>
+				<form className="grid gap-4" data-testid="auth-form" onSubmit={onSubmit}>
 					<label className="grid gap-2 text-sm font-semibold text-slate-700">
 						Email
 						<input
 							autoComplete="email"
 							className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+							data-testid="auth-email"
 							inputMode="email"
 							onChange={(event) => onEmailChange(event.target.value)}
 							placeholder="student@example.com"
@@ -392,6 +399,7 @@ function AuthScreen({
 								authMode === "login" ? "current-password" : "new-password"
 							}
 							className="rounded-md border border-slate-300 px-3 py-2 text-slate-950 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+							data-testid="auth-password"
 							minLength={8}
 							onChange={(event) => onPasswordChange(event.target.value)}
 							placeholder="At least 8 characters"
@@ -402,6 +410,7 @@ function AuthScreen({
 					</label>
 					<button
 						className="rounded-md bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
+						data-testid="auth-submit"
 						disabled={authLoading}
 						type="submit"
 					>
@@ -456,16 +465,18 @@ function UploadScreen({
 					</p>
 				</div>
 
-				<form className="grid gap-4" onSubmit={onSubmit}>
+				<form className="grid gap-4" data-testid="upload-form" onSubmit={onSubmit}>
 					<input
 						accept=".mzML"
 						className="hidden"
+						data-testid="file-input"
 						onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
 						ref={fileInputRef}
 						type="file"
 					/>
 					<button
 						className="w-fit rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+						data-testid="choose-file-button"
 						onClick={() => fileInputRef.current?.click()}
 						type="button"
 					>
@@ -473,10 +484,10 @@ function UploadScreen({
 					</button>
 
 					<div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
-						<p className="font-semibold text-slate-950">
+						<p className="font-semibold text-slate-950" data-testid="selected-file-name">
 							{selectedFile?.name ?? "No file selected"}
 						</p>
-						<p className="mt-1 text-sm text-slate-500">
+						<p className="mt-1 text-sm text-slate-500" data-testid="selected-file-size">
 							{selectedFile
 								? formatBytes(selectedFile.size)
 								: "Only .mzML files are accepted."}
@@ -485,6 +496,7 @@ function UploadScreen({
 
 					<button
 						className="rounded-md bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
+						data-testid="upload-submit"
 						disabled={!canUpload}
 						type="submit"
 					>
@@ -539,16 +551,27 @@ function StatusPanel({
 			<div className="grid gap-3 text-sm">
 				<InfoRow
 					label="Job ID"
+					testId="status-job-id"
 					value={job?.job_id ?? (activeJobId || "No active job")}
 				/>
 				<InfoRow
 					label="File"
+					testId="status-filename"
 					value={job?.original_filename ?? "Awaiting upload"}
 				/>
-				<InfoRow label="Prediction" value={job?.predicted_class ?? "Pending"} />
-				<InfoRow label="Probability" value={probabilityLabel} />
+				<InfoRow
+					label="Prediction"
+					testId="status-predicted-class"
+					value={job?.predicted_class ?? "Pending"}
+				/>
+				<InfoRow
+					label="Probability"
+					testId="status-probability"
+					value={probabilityLabel}
+				/>
 				<InfoRow
 					label="Confidence"
+					testId="status-confidence"
 					value={job?.confidence_label ?? "Awaiting prediction"}
 				/>
 			</div>
@@ -568,7 +591,10 @@ function ResultScreen({
 	const failed = job.status === "FAILED";
 
 	return (
-		<section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+		<section
+			className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
+			data-testid="result-screen"
+		>
 			<div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
 				<div>
 					<p className="text-sm font-bold uppercase text-teal-700">Result</p>
@@ -581,18 +607,27 @@ function ResultScreen({
 			</div>
 
 			{failed ? (
-				<div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">
+				<div
+					className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800"
+					data-testid="result-error"
+				>
 					{job.error_message ?? "The worker failed while processing this job."}
 				</div>
 			) : (
 				<div className="grid gap-4 md:grid-cols-3">
 					<ResultCard
 						label="Predicted class"
+						testId="result-predicted-class"
 						value={job.predicted_class ?? "Unknown"}
 					/>
-					<ResultCard label="Probability" value={probabilityLabel} />
+					<ResultCard
+						label="Probability"
+						testId="result-probability"
+						value={probabilityLabel}
+					/>
 					<ResultCard
 						label="Confidence"
+						testId="result-confidence"
 						value={job.confidence_label ?? "Unknown"}
 					/>
 				</div>
@@ -603,12 +638,17 @@ function ResultScreen({
 			) : null}
 
 			<div className="mt-6 grid gap-3 rounded-lg bg-slate-50 p-4 text-sm md:grid-cols-2">
-				<InfoRow label="Job ID" value={job.job_id} />
-				<InfoRow label="Updated" value={formatDateMK(job.updated_at)} />
+				<InfoRow label="Job ID" testId="result-job-id" value={job.job_id} />
+				<InfoRow
+					label="Updated"
+					testId="result-updated-at"
+					value={formatDateMK(job.updated_at)}
+				/>
 			</div>
 
 			<button
 				className="mt-6 rounded-md bg-teal-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-teal-800"
+				data-testid="new-upload-button"
 				onClick={onNewUpload}
 				type="button"
 			>
@@ -657,28 +697,54 @@ function StatusPill({ status }: { status: JobStatus | null }) {
 	return (
 		<span
 			className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${classes}`}
+			data-job-status={status ?? ""}
+			data-testid="status-pill"
 		>
 			{status ?? "No job"}
 		</span>
 	);
 }
 
-function ResultCard({ label, value }: { label: string; value: string }) {
+function ResultCard({
+	label,
+	value,
+	testId,
+}: {
+	label: string;
+	value: string;
+	testId?: string;
+}) {
 	return (
 		<div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
 			<p className="text-xs font-bold uppercase text-slate-500">{label}</p>
-			<p className="mt-2 break-words text-2xl font-bold text-slate-950">
+			<p
+				className="mt-2 break-words text-2xl font-bold text-slate-950"
+				data-testid={testId}
+			>
 				{value}
 			</p>
 		</div>
 	);
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+	label,
+	value,
+	testId,
+}: {
+	label: string;
+	value: string;
+	testId?: string;
+}) {
 	return (
 		<div>
 			<p className="text-xs font-bold uppercase text-slate-500">{label}</p>
-			<p className="mt-1 break-words font-semibold text-slate-900">{value}</p>
+			<p
+				className="mt-1 break-words font-semibold text-slate-900"
+				data-testid={testId}
+			>
+				{value}
+			</p>
 		</div>
 	);
 }
@@ -694,6 +760,8 @@ function NoticeBanner({ notice }: { notice: Notice }) {
 	return (
 		<div
 			className={`rounded-lg border px-4 py-3 text-sm font-semibold ${classes}`}
+			data-notice-kind={notice.kind}
+			data-testid="notice-banner"
 		>
 			{notice.text}
 		</div>
