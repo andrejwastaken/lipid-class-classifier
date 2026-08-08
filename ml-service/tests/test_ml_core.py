@@ -1,12 +1,9 @@
-import sys
 from pathlib import Path
 
 import joblib
 import numpy as np
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ml_core.artifacts import predict_mz_values, save_artifact_bundle
 from ml_core.features import MzHistogramFeaturizer, parse_mz_values

@@ -1,9 +1,6 @@
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import worker as worker_module
 from worker import JobPayload, LipidClassifierWorker, mark_job_processing, run_worker_loop, write_prediction_result
