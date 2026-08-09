@@ -1,0 +1,17 @@
+{
+  "name": "lipid-classifier-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright end-to-end tests driving the full Docker stack.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
