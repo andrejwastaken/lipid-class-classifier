@@ -1,0 +1,846 @@
+{
+  "info": {
+    "_postman_id": "0d3f5c1a-9a6e-4a71-8c2f-1b7e5a0c4d21",
+    "name": "Lipid Class Classifier API",
+    "description": "API-level tests for the Lipid Class Classifier backend.\n\nRun against a live stack:\n\n    docker compose up -d --wait\n\nThe requests run in order and chain state through collection variables: registration stores `token` and `email`, upload stores `jobId`. Import the environment file `lipid-classifier.local.postman_environment.json` alongside this collection.\n\nOne manual step: the upload requests use a file body. Postman does not carry file contents inside an exported collection, so open each upload request, go to Body > form-data, and re-select the `file` value:\n\n  - 'Upload mzML spectrum'  ->  testdata/sample.mzML\n  - 'Upload rejected extension'  ->  testdata/wrong-extension.txt\n\nBoth files are produced by `python3 testdata/generate_fixtures.py`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// A fresh address per run keeps the collection re-runnable against a persistent database.",
+                  "const email = `postman-${Date.now()}@example.com`;",
+                  "pm.collectionVariables.set('email', email);",
+                  "pm.collectionVariables.set('password', 'password123');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a token and the created user', function () {",
+                  "    pm.expect(body).to.have.property('token').that.is.a('string').and.is.not.empty;",
+                  "    pm.expect(body.user).to.have.property('id');",
+                  "    pm.expect(body.user).to.have.property('email');",
+                  "});",
+                  "",
+                  "pm.test('the email is normalised to lower case', function () {",
+                  "    pm.expect(body.user.email).to.eql(pm.collectionVariables.get('email').toLowerCase());",
+                  "});",
+                  "",
+                  "pm.test('the token is a three part JWT', function () {",
+                  "    pm.expect(body.token.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('token', body.token);",
+                  "pm.collectionVariables.set('userId', body.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Creates an account and returns a bearer token."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a token for the same account', function () {",
+                  "    pm.expect(body.token).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.user.id).to.eql(pm.collectionVariables.get('userId'));",
+                  "});",
+                  "",
+                  "// Continue the run with the login token rather than the registration one.",
+                  "pm.collectionVariables.set('token', body.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login with surrounding whitespace and mixed case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the email is normalised, so this resolves to the same account', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().user.id).to.eql(pm.collectionVariables.get('userId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"  {{email}}  \",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Jobs",
+      "item": [
+        {
+          "name": "Upload mzML spectrum",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 202 Accepted', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('returns a job id and PENDING status', function () {",
+                  "    pm.expect(body).to.have.property('job_id');",
+                  "    pm.expect(body.status).to.eql('PENDING');",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('jobId', body.job_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "../testdata/sample.mzML"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "upload"
+              ]
+            },
+            "description": "Stores the file, creates a PENDING job and publishes the ml_jobs message."
+          }
+        },
+        {
+          "name": "Poll job",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test('describes the job we just created', function () {",
+                  "    pm.expect(body.job_id).to.eql(pm.collectionVariables.get('jobId'));",
+                  "    pm.expect(body.original_filename).to.eql('sample.mzML');",
+                  "});",
+                  "",
+                  "pm.test('the status is one of the four lifecycle values', function () {",
+                  "    pm.expect(body.status).to.be.oneOf(['PENDING', 'PROCESSING', 'DONE', 'FAILED']);",
+                  "});",
+                  "",
+                  "pm.test('a finished job carries a class and a probability', function () {",
+                  "    if (body.status !== 'DONE') {",
+                  "        pm.expect(body.predicted_class).to.be.oneOf([null, undefined]);",
+                  "        return;",
+                  "    }",
+                  "    pm.expect(body.predicted_class).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.probability).to.be.within(0, 1);",
+                  "    pm.expect(body.top_predictions).to.be.an('array').that.is.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}"
+              ]
+            },
+            "description": "Run this repeatedly to watch PENDING -> PROCESSING -> DONE while the worker consumes the queue."
+          }
+        },
+        {
+          "name": "Poll job until DONE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "const attempts = Number(pm.collectionVariables.get('pollAttempts') || 0);",
+                  "",
+                  "pm.test('responds 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (body.status === 'PENDING' || body.status === 'PROCESSING') {",
+                  "    if (attempts < 15) {",
+                  "        pm.collectionVariables.set('pollAttempts', attempts + 1);",
+                  "        setTimeout(() => {}, 1000);",
+                  "        pm.execution.setNextRequest('Poll job until DONE');",
+                  "        return;",
+                  "    }",
+                  "    pm.test('the worker finished within 15 polls', function () {",
+                  "        pm.expect.fail(`still ${body.status} after ${attempts} polls - is the ml-worker running?`);",
+                  "    });",
+                  "}",
+                  "",
+                  "pm.collectionVariables.set('pollAttempts', 0);",
+                  "",
+                  "pm.test('the job reached DONE', function () {",
+                  "    pm.expect(body.status).to.eql('DONE');",
+                  "});",
+                  "",
+                  "pm.test('the prediction payload is complete', function () {",
+                  "    pm.expect(body.predicted_class).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.probability).to.be.within(0, 1);",
+                  "    pm.expect(body.model_version).to.be.a('string').and.not.empty;",
+                  "    pm.expect(body.confidence_label).to.be.oneOf(['Confident', 'Low confidence']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/{{jobId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{jobId}}"
+              ]
+            },
+            "description": "Re-runs itself until the worker finishes, up to 15 attempts. Requires the ml-worker container and a model artifact."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Negative cases",
+      "item": [
+        {
+          "name": "Register duplicate email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register with an invalid email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('bean validation rejects it with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register with a short password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the 8 character minimum is enforced with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"short-{{$timestamp}}@example.com\",\n  \"password\": \"short\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login with the wrong password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"definitely-wrong\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login with a short password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('a short password is an authentication failure, not a validation error', function () {",
+                  "    // RegisterRequest and LoginRequest were once one shared DTO, so @Size(min = 8)",
+                  "    // applied to login too and this returned 400 instead of 401.",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"short\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login as an unknown user",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "pm.test('does not reveal whether the account exists', function () {",
+                  "    // The same status as a wrong password, so the response cannot be used to enumerate accounts.",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"nobody-{{$timestamp}}@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload without a token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('responds 401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "../testdata/sample.mzML"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "upload"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload with a tampered token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('a token that fails the signature check is refused with 401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}tampered"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "../testdata/sample.mzML"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "upload"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload rejected extension",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('a non mzML upload is rejected with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "../testdata/wrong-extension.txt"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "upload"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Poll a job that belongs to nobody",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('an unknown job id is reported as 404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "description": "A job that does not exist, and a job owned by another user, are deliberately indistinguishable."
+          }
+        },
+        {
+          "name": "Poll with a malformed job id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('a non UUID path variable is rejected with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/not-a-uuid",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "not-a-uuid"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": "password123"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    },
+    {
+      "key": "pollAttempts",
+      "value": "0"
+    }
+  ]
+}
