@@ -10,6 +10,8 @@ import mk.ukim.finki.lipidclassclassifier.config.SecurityConfig
 import mk.ukim.finki.lipidclassclassifier.domain.AppUserRepository
 import org.junit.jupiter.api.DisplayName
 import org.mockito.kotlin.any
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
@@ -145,6 +147,36 @@ class AuthControllerWebTests {
                 .content(body("student@example.com", "wrong-password")),
         )
             .andExpect(status().isUnauthorized)
+    }
+
+    @Test
+    @DisplayName("login does not apply the registration password-length rule")
+    fun `login with a short password reaches the service and returns 401`() {
+        whenever(authService.login(any()))
+            .thenThrow(ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password"))
+
+        // RegisterRequest and LoginRequest were once a single AuthRequest, so @Size(min = 8)
+        // applied here too and this returned 400 without ever reaching AuthService.
+        mockMvc.perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("student@example.com", "short")),
+        )
+            .andExpect(status().isUnauthorized)
+
+        verify(authService).login(any())
+    }
+
+    @Test
+    fun `login with an empty password is still rejected with 400`() {
+        mockMvc.perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("student@example.com", "")),
+        )
+            .andExpect(status().isBadRequest)
+
+        verify(authService, never()).login(any())
     }
 
     @Test

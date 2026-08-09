@@ -45,7 +45,10 @@ class AuthServiceTests {
         whenever(jwtService.createToken(any(), any())).thenReturn("signed-token")
     }
 
-    private fun request(email: String, password: String = "password123") = AuthRequest(email, password)
+    private fun registerRequest(email: String, password: String = "password123") =
+        RegisterRequest(email, password)
+
+    private fun request(email: String, password: String = "password123") = LoginRequest(email, password)
 
     private fun assertRejected(expectedStatus: HttpStatus, block: () -> Unit) {
         val exception = assertFailsWith<ResponseStatusException> { block() }
@@ -56,7 +59,7 @@ class AuthServiceTests {
     fun `registering an already known email is rejected with 409`() {
         whenever(userRepository.existsByEmail("a@b.com")).thenReturn(true)
 
-        assertRejected(HttpStatus.CONFLICT) { service.register(request("a@b.com")) }
+        assertRejected(HttpStatus.CONFLICT) { service.register(registerRequest("a@b.com")) }
 
         verify(userRepository, never()).save(any<AppUser>())
     }
@@ -69,7 +72,7 @@ class AuthServiceTests {
             invocation.getArgument<AppUser>(0).also { it.id = userId }
         }
 
-        val response = service.register(request("  A@B.com  "))
+        val response = service.register(registerRequest("  A@B.com  "))
 
         val captor = argumentCaptor<AppUser>()
         verify(userRepository).save(captor.capture())
@@ -87,7 +90,7 @@ class AuthServiceTests {
         whenever(userRepository.existsByEmail("a@b.com")).thenReturn(true)
 
         // Different surface form, same account.
-        assertRejected(HttpStatus.CONFLICT) { service.register(request(" A@B.com ")) }
+        assertRejected(HttpStatus.CONFLICT) { service.register(registerRequest(" A@B.com ")) }
 
         verify(userRepository).existsByEmail("a@b.com")
     }

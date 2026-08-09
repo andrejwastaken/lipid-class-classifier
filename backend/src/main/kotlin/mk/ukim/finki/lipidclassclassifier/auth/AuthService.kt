@@ -13,7 +13,7 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
 ) {
-    fun register(request: AuthRequest): AuthResponse {
+    fun register(request: RegisterRequest): AuthResponse {
         val normalizedEmail = request.email.trim().lowercase()
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered")
@@ -28,7 +28,7 @@ class AuthService(
         return responseFor(user)
     }
 
-    fun login(request: AuthRequest): AuthResponse {
+    fun login(request: LoginRequest): AuthResponse {
         val normalizedEmail = request.email.trim().lowercase()
         val user = userRepository.findByEmail(normalizedEmail)
             .orElseThrow { ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password") }

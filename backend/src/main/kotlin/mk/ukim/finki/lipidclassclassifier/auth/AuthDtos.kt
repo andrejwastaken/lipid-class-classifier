@@ -5,12 +5,21 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.util.UUID
 
-data class AuthRequest(
+data class RegisterRequest(
     @field:Email
     @field:NotBlank
     val email: String,
 
     @field:Size(min = 8, max = 200)
+    val password: String,
+)
+
+data class LoginRequest(
+    @field:Email
+    @field:NotBlank
+    val email: String,
+
+    @field:NotBlank
     val password: String,
 )
 
