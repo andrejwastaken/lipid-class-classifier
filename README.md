@@ -10,17 +10,6 @@ Users register or log in, upload an `.mzML` file, and receive:
 
 The main engineering focus is the ML classification pipeline. The web UI is intentionally simple and exists to demonstrate the complete upload -> queue -> worker -> result flow.
 
-## Current Status
-
-The full Docker flow has been verified locally:
-
-- frontend served at `http://localhost:5173`
-- backend API at `http://localhost:8080`
-- PostgreSQL and RabbitMQ healthy
-- ML worker consuming `ml_jobs`
-- upload of a real local `.mzML` file completed with status `DONE`
-- smoke prediction returned lipid class `TAG` with probability `0.03578287012126371`
-
 ## Architecture
 
 ```text
@@ -69,9 +58,9 @@ The backend does not perform ML inference. It stores the upload and publishes th
 
 ```json
 {
-  "job_id": "...",
-  "file_path": "...",
-  "user_id": "..."
+	"job_id": "...",
+	"file_path": "...",
+	"user_id": "..."
 }
 ```
 
@@ -174,10 +163,10 @@ Training happens in `ml-service/train.py`. The script:
 
 Current evaluation:
 
-| Model | Accuracy | Macro F1 |
-| --- | ---: | ---: |
-| Logistic Regression | 0.5504 | 0.3828 |
-| Random Forest | 0.6488 | 0.5724 |
+| Model               | Accuracy | Macro F1 |
+| ------------------- | -------: | -------: |
+| Logistic Regression |   0.5504 |   0.3828 |
+| Random Forest       |   0.6488 |   0.5724 |
 
 The current best model is `random_forest`.
 
@@ -266,35 +255,57 @@ k8s/argocd/README.md
 
 The Argo CD setup continuously syncs the full application (including PostgreSQL) from GitHub `main`. The GitHub Actions workflow pins each newly built image's git-SHA tag into `k8s/kustomization.yaml` and commits it back to `main`, so Argo CD rolls out every published build automatically.
 
-## Local Smoke Test
+## Testing
 
-After `docker compose up --build`, use the browser:
+### End-To-End Tests (Playwright)
 
-1. Open `http://localhost:5173`.
-2. Register a user.
-3. Upload an `.mzML` file from `data/mzML-Diabetes-CKD1-Neg-mzml 1/`.
-4. Wait for status to move from `PENDING` to `PROCESSING` to `DONE`.
-5. Confirm predicted class and probability appear.
+Path: `e2e/`
 
-API smoke flow:
+Browser tests driving the full Docker stack. Ten specs across `tests/auth.spec.ts` (register,
+duplicate email, login, wrong password, logout, session persistence) and `tests/upload.spec.ts`
+(upload and prediction, rejected extension, consecutive jobs, resuming an in-flight job).
+
+Prerequisites:
+
+1. Test fixtures, since `data/` and `*.joblib` are gitignored:
+
+   ```bash
+   python3 testdata/generate_fixtures.py
+   ```
+
+   On a clean checkout this also writes the tiny model artifact the worker needs. An existing
+   trained artifact is kept; pass `--force` to replace it with the fast test model.
+
+2. The running stack:
+
+   ```bash
+   docker compose up -d --build --wait
+   ```
+
+3. Playwright and its browser, once:
+
+   ```bash
+   cd e2e && npm install && npx playwright install chromium
+   ```
+
+Run the suite:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"smoke@example.com","password":"password123"}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
-
-curl -X POST http://localhost:8080/api/jobs/upload \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@data/mzML-Diabetes-CKD1-Neg-mzml 1/4-10-2025_0375_8_1_887.mzML;filename=smoke.mzML"
+cd e2e && npx playwright test --reporter=html
 ```
 
-Use the returned `job_id`:
+The frontend is expected at `http://localhost:5173`; override with `E2E_BASE_URL`. Other entry
+points: `npm run test:headed` to watch the browser, `npm run test:ui` for the interactive runner,
+and `npm run report` to open the last HTML report.
 
-```bash
-curl http://localhost:8080/api/jobs/<job_id> \
-  -H "Authorization: Bearer $TOKEN"
-```
+Notes:
+
+- Every test registers its own account with a unique email, so the suite is re-runnable without
+  resetting the database.
+- The upload specs allow up to 75 s for a job to reach `DONE`. With the tiny fixture model this
+  takes about a second; with the full trained artifact the worker's startup load dominates.
+- `fullyParallel` is off and `workers` is 1: the specs share one backend, one queue and one worker,
+  so serial execution keeps failures readable.
 
 ## Train The Model
 
@@ -373,8 +384,8 @@ Request:
 
 ```json
 {
-  "email": "student@example.com",
-  "password": "password123"
+	"email": "student@example.com",
+	"password": "password123"
 }
 ```
 
@@ -382,11 +393,11 @@ Response:
 
 ```json
 {
-  "token": "...",
-  "user": {
-    "id": "...",
-    "email": "student@example.com"
-  }
+	"token": "...",
+	"user": {
+		"id": "...",
+		"email": "student@example.com"
+	}
 }
 ```
 
@@ -403,8 +414,8 @@ Response:
 
 ```json
 {
-  "job_id": "...",
-  "status": "PENDING"
+	"job_id": "...",
+	"status": "PENDING"
 }
 ```
 
@@ -419,15 +430,15 @@ Response:
 
 ```json
 {
-  "job_id": "...",
-  "status": "DONE",
-  "original_filename": "sample.mzML",
-  "predicted_class": "TAG",
-  "probability": 0.03578287012126371,
-  "model_version": "1",
-  "error_message": null,
-  "created_at": "...",
-  "updated_at": "..."
+	"job_id": "...",
+	"status": "DONE",
+	"original_filename": "sample.mzML",
+	"predicted_class": "TAG",
+	"probability": 0.03578287012126371,
+	"model_version": "1",
+	"error_message": null,
+	"created_at": "...",
+	"updated_at": "..."
 }
 ```
 
@@ -443,9 +454,9 @@ Message:
 
 ```json
 {
-  "job_id": "...",
-  "file_path": "...",
-  "user_id": "..."
+	"job_id": "...",
+	"file_path": "...",
+	"user_id": "..."
 }
 ```
 

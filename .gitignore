@@ -21,5 +21,24 @@ ml-service/artifacts/*.pickle
 .idea/
 .DS_Store
 *.log
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Frontend (Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/logs/
+frontend/*.local
+
+# Playwright E2E project
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+e2e/playwright/.cache/
 deploy/cloud/secrets.cloud.yaml
 plan.md
