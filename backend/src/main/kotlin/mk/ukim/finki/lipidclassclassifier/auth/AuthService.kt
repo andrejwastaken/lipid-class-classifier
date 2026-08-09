@@ -14,7 +14,9 @@ class AuthService(
     private val jwtService: JwtService,
 ) {
     fun register(request: RegisterRequest): AuthResponse {
-        val normalizedEmail = request.email.trim().lowercase()
+        // Idempotent: RegisterRequest/LoginRequest already normalise on the way in, but the
+        // service does not assume its caller is the web layer.
+        val normalizedEmail = normalizeEmail(request.email)
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "Email is already registered")
         }
@@ -29,7 +31,9 @@ class AuthService(
     }
 
     fun login(request: LoginRequest): AuthResponse {
-        val normalizedEmail = request.email.trim().lowercase()
+        // Idempotent: RegisterRequest/LoginRequest already normalise on the way in, but the
+        // service does not assume its caller is the web layer.
+        val normalizedEmail = normalizeEmail(request.email)
         val user = userRepository.findByEmail(normalizedEmail)
             .orElseThrow { ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid email or password") }
 

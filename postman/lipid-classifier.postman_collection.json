@@ -20,7 +20,8 @@
                   "// A fresh address per run keeps the collection re-runnable against a persistent database.",
                   "const email = `postman-${Date.now()}@example.com`;",
                   "pm.collectionVariables.set('email', email);",
-                  "pm.collectionVariables.set('password', 'password123');"
+                  "pm.collectionVariables.set('password', 'password123');",
+                  "pm.collectionVariables.set('emailUpper', email.toUpperCase());"
                 ]
               }
             },
@@ -132,14 +133,17 @@
           }
         },
         {
-          "name": "Login with surrounding whitespace and mixed case",
+          "name": "Login with a whitespace-padded email",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('the email is normalised, so this resolves to the same account', function () {",
+                  "pm.test('a padded address is normalised and resolves to the same account', function () {",
+                  "    // This returned 400 before LoginRequest normalised the email on the way in: @Email ran",
+                  "    // against the raw value and judged '  a@b.com  ' malformed, so AuthService - which trims",
+                  "    // - was never entered.",
                   "    pm.response.to.have.status(200);",
                   "    pm.expect(pm.response.json().user.id).to.eql(pm.collectionVariables.get('userId'));",
                   "});"
@@ -158,6 +162,47 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"  {{email}}  \",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Login with a mixed-case email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('case normalisation does resolve to the same account', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().user.id).to.eql(pm.collectionVariables.get('userId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{emailUpper}}\",\n  \"password\": \"{{password}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/auth/login",
@@ -841,6 +886,10 @@
     {
       "key": "pollAttempts",
       "value": "0"
+    },
+    {
+      "key": "emailUpper",
+      "value": ""
     }
   ]
 }

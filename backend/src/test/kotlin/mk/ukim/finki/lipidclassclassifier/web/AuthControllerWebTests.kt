@@ -4,12 +4,15 @@ import mk.ukim.finki.lipidclassclassifier.auth.AuthController
 import mk.ukim.finki.lipidclassclassifier.auth.AuthResponse
 import mk.ukim.finki.lipidclassclassifier.auth.AuthService
 import mk.ukim.finki.lipidclassclassifier.auth.JwtService
+import mk.ukim.finki.lipidclassclassifier.auth.LoginRequest
+import mk.ukim.finki.lipidclassclassifier.auth.RegisterRequest
 import mk.ukim.finki.lipidclassclassifier.auth.UserResponse
 import mk.ukim.finki.lipidclassclassifier.config.JwtAuthenticationFilter
 import mk.ukim.finki.lipidclassclassifier.config.SecurityConfig
 import mk.ukim.finki.lipidclassclassifier.domain.AppUserRepository
 import org.junit.jupiter.api.DisplayName
 import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -27,6 +30,7 @@ import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import org.springframework.web.server.ResponseStatusException
 import java.util.UUID
 import kotlin.test.Test
+import kotlin.test.assertEquals
 
 /**
  * Web-layer integration tests for [AuthController], using the Spring MVC Test Framework
@@ -165,6 +169,69 @@ class AuthControllerWebTests {
             .andExpect(status().isUnauthorized)
 
         verify(authService).login(any())
+    }
+
+    @Test
+    @DisplayName("a whitespace-padded address is normalised, not rejected")
+    fun `login with a whitespace-padded email reaches the service`() {
+        whenever(authService.login(any())).thenReturn(authResponse())
+
+        mockMvc.perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("  student@example.com  ", "password123")),
+        )
+            .andExpect(status().isOk)
+
+        val captor = argumentCaptor<LoginRequest>()
+        verify(authService).login(captor.capture())
+        assertEquals("student@example.com", captor.lastValue.email)
+    }
+
+    @Test
+    @DisplayName("a mixed-case address is lower-cased on the way in")
+    fun `login with a mixed-case email reaches the service normalised`() {
+        whenever(authService.login(any())).thenReturn(authResponse())
+
+        mockMvc.perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("STUDENT@EXAMPLE.COM", "password123")),
+        )
+            .andExpect(status().isOk)
+
+        val captor = argumentCaptor<LoginRequest>()
+        verify(authService).login(captor.capture())
+        assertEquals("student@example.com", captor.lastValue.email)
+    }
+
+    @Test
+    @DisplayName("registration normalises the email the same way")
+    fun `register with a padded mixed-case email reaches the service normalised`() {
+        whenever(authService.register(any())).thenReturn(authResponse())
+
+        mockMvc.perform(
+            post("/api/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("  STUDENT@Example.com  ", "password123")),
+        )
+            .andExpect(status().isCreated)
+
+        val captor = argumentCaptor<RegisterRequest>()
+        verify(authService).register(captor.capture())
+        assertEquals("student@example.com", captor.lastValue.email)
+    }
+
+    @Test
+    fun `an email that is only whitespace is still rejected with 400`() {
+        mockMvc.perform(
+            post("/api/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("   ", "password123")),
+        )
+            .andExpect(status().isBadRequest)
+
+        verify(authService, never()).login(any())
     }
 
     @Test

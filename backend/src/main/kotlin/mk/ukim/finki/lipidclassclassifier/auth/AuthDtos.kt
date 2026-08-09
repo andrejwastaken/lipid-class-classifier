@@ -5,23 +5,30 @@ import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.Size
 import java.util.UUID
 
-data class RegisterRequest(
-    @field:Email
-    @field:NotBlank
-    val email: String,
+class RegisterRequest(
+    email: String,
 
+    @field:NotBlank
     @field:Size(min = 8, max = 200)
     val password: String,
-)
-
-data class LoginRequest(
+) {
     @field:Email
     @field:NotBlank
-    val email: String,
+    val email: String = normalizeEmail(email)
+}
+
+class LoginRequest(
+    email: String,
 
     @field:NotBlank
     val password: String,
-)
+) {
+    @field:Email
+    @field:NotBlank
+    val email: String = normalizeEmail(email)
+}
+
+internal fun normalizeEmail(value: String): String = value.trim().lowercase()
 
 data class AuthResponse(
     val token: String,

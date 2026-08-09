@@ -72,7 +72,7 @@ class AuthServiceTests {
             invocation.getArgument<AppUser>(0).also { it.id = userId }
         }
 
-        val response = service.register(registerRequest("  A@B.com  "))
+        val response = service.register(registerRequest("A@B.com"))
 
         val captor = argumentCaptor<AppUser>()
         verify(userRepository).save(captor.capture())
@@ -90,7 +90,7 @@ class AuthServiceTests {
         whenever(userRepository.existsByEmail("a@b.com")).thenReturn(true)
 
         // Different surface form, same account.
-        assertRejected(HttpStatus.CONFLICT) { service.register(registerRequest(" A@B.com ")) }
+        assertRejected(HttpStatus.CONFLICT) { service.register(registerRequest("A@B.com")) }
 
         verify(userRepository).existsByEmail("a@b.com")
     }
@@ -146,16 +146,32 @@ class AuthServiceTests {
     }
 
     @Test
-    @DisplayName("\" A@B.com \" and \"a@b.com\" resolve to the same account")
-    fun `login normalises the email before lookup`() {
+    @DisplayName("\"A@B.com\" and \"a@b.com\" resolve to the same account")
+    fun `login lower-cases the email before lookup`() {
         whenever(userRepository.findByEmail("a@b.com")).thenReturn(Optional.of(storedUser))
         whenever(passwordEncoder.matches(any(), any())).thenReturn(true)
 
-        val spaced = service.login(request("  A@B.com  "))
+        val mixedCase = service.login(request("A@B.com"))
         val plain = service.login(request("a@b.com"))
 
-        assertEquals(plain.user.id, spaced.user.id)
+        assertEquals(plain.user.id, mixedCase.user.id)
         // Never queried with the raw, unnormalised form.
+        verify(userRepository, never()).findByEmail("A@B.com")
+    }
+
+    @Test
+    @DisplayName("\"  A@B.com  \" and \"a@b.com\" resolve to the same account")
+    fun `login trims the email before lookup`() {
+        whenever(userRepository.findByEmail("a@b.com")).thenReturn(Optional.of(storedUser))
+        whenever(passwordEncoder.matches(any(), any())).thenReturn(true)
+
+        // LoginRequest normalises on construction, so the service never sees the padded form -
+        // and neither does @Email, which is what makes this reachable over HTTP at all. The
+        // service normalises again anyway, idempotently, rather than trusting its caller.
+        val padded = service.login(request("  A@B.com  "))
+        val plain = service.login(request("a@b.com"))
+
+        assertEquals(plain.user.id, padded.user.id)
         verify(userRepository, never()).findByEmail("  A@B.com  ")
     }
 }
